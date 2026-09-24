@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "io.a2.sidecar.grpc";
+option java_outer_classname = "A2Proto";
+
+package a2;
+
+service A2Service {
+  rpc Authenticate (AuthRequest) returns (AuthResponse);
+  rpc Authorize (AuthorizeRequest) returns (AuthorizeResponse);
+  rpc IssueToken (TokenRequest) returns (TokenResponse);
+  rpc RotateToken (TokenRequest) returns (TokenResponse);
+  rpc RevokeToken (RevokeRequest) returns (RevokeResponse);
+  rpc Introspect (IntrospectRequest) returns (IntrospectResponse);
+}
+
+message AuthRequest {
+  string protocol = 1;          // OIDC, SAML, JWT, API_KEY, KERBEROS, ...
+  string credentials = 2;       // bearer token, assertion, api-key, etc.
+  map<string, string> headers = 3;
+  map<string, string> attributes = 4;
+}
+
+message AuthResponse {
+  bool success = 1;
+  string principal_id = 2;
+  string principal_name = 3;
+  repeated string roles = 4;
+  repeated string permissions = 5;
+  map<string, string> claims = 6;
+  string error = 7;
+}
+
+message AuthorizeRequest {
+  string principal_id = 1;
+  repeated string required_roles = 2;
+  repeated string required_permissions = 3;
+  bool require_all = 4;
+  string protocol = 5;
+}
+
+message AuthorizeResponse {
+  bool allowed = 1;
+  string reason = 2;
+}
+
+message TokenRequest {
+  string type = 1;              // ACCESS, REFRESH, ID, API_KEY, SESSION
+  string principal_id = 2;
+  repeated string scopes = 3;
+  map<string, string> claims = 4;
+  int64 ttl_seconds = 5;
+  string protocol = 6;
+  string existing_token = 7;    // for rotate
+}
+
+message TokenResponse {
+  bool success = 1;
+  string token = 2;
+  string token_id = 3;
+  string type = 4;
+  int64 expires_at_epoch = 5;
+  map<string, string> claims = 6;
+  string error = 7;
+}
+
+message RevokeRequest {
+  string token_id = 1;
+  string principal_id = 2;
+  bool all_for_principal = 3;
+  string reason = 4;
+}
+
+message RevokeResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message IntrospectRequest {
+  string token = 1;
+}
+
+message IntrospectResponse {
+  bool active = 1;
+  string token_id = 2;
+  string type = 3;
+  string principal_id = 4;
+  int64 expires_at_epoch = 5;
+  map<string, string> claims = 6;
+}
