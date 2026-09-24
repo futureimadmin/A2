@@ -29,29 +29,46 @@ The runtime + SPI decide *how* (which provider, which token format, etc.).
 │  Application code (annotations only)    │
 ├─────────────────────────────────────────┤
 │  A2 Interceptor / Runtime               │
+│  (Spring AOP / Quarkus CDI / manual)    │
 ├─────────────────────────────────────────┤
 │  SPI (ProtocolProvider, TokenService)   │
 ├─────────────────────────────────────────┤
-│  Concrete providers (OIDC, SAML, …)     │
+│  Concrete providers                     │
+│  JWT | API-Key | OIDC | SAML | Kerberos │
 └─────────────────────────────────────────┘
+
+          ┌──────────────────┐
+          │  gRPC Sidecar    │  ← any language
+          └──────────────────┘
 ```
+
+## Implemented Components
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| Core annotations + SPI | Done | Language-independent contract |
+| JWT / API-Key providers | Done | Full lifecycle |
+| OIDC / OAuth2 provider | Done | Introspection + local JWT fallback |
+| SAML 2.0 provider | Done | AuthnRequest + ACS scaffold |
+| Kerberos / SPNEGO provider | Done | GSS-ready scaffold |
+| Annotation processor | Done | Compile-time validation |
+| Spring Boot starter | Done | Auto-config + AOP aspect |
+| Quarkus extension | Done | CDI interceptor + config |
+| gRPC Sidecar | Done | Multi-language AuthN/AuthZ/Token API |
 
 ## Why Java first?
 
 - Mature annotation & reflection model.
 - Excellent existing ecosystem (Spring Security, pac4j, Keycloak adapters).
-- Easy to expose the same contract over gRPC/REST for other languages.
+- Easy to expose the same contract over gRPC for other languages.
 
-## Multi-language vision
+## Multi-language vision (realized)
 
-1. Keep annotation names + semantics identical across languages.
-2. Publish the SPI as a language-neutral OpenAPI / protobuf definition.
-3. Provide thin SDKs that talk to a central A2 sidecar or embed the runtime.
+1. Annotation names + semantics identical across languages (documented in `ANNOTATION_CONTRACT.md`).
+2. SPI exposed as protobuf (`a2-sidecar/src/main/proto/a2.proto`).
+3. Thin clients in any language call the sidecar; heavy lifting stays in the Java runtime (or future native ports).
 
 ## Token Lifecycle as a First-Class Concern
-
-Most frameworks treat tokens as opaque strings.
-A2 elevates them:
 
 - Issue, rotate, revoke are explicit operations.
 - Annotations drive the lifecycle declaratively.
@@ -63,7 +80,7 @@ A2 elevates them:
 - New policy engines = implement `authorize(...)` or plug a PolicyEngine SPI.
 - New token stores = replace `TokenService`.
 
-## Non-goals (v0.1)
+## Non-goals (still)
 
 - Full IdP server (use Keycloak, Ory, Zitadel…).
 - UI / admin console.
