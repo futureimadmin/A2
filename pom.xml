@@ -39,7 +39,11 @@
         <module>a2-annotations</module>
         <module>a2-spi</module>
         <module>a2-core</module>
+        <module>a2-processor</module>
         <module>a2-providers</module>
+        <module>a2-spring-boot-starter</module>
+        <module>a2-quarkus-extension</module>
+        <module>a2-sidecar</module>
         <module>a2-examples</module>
     </modules>
 
@@ -50,6 +54,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.version>5.10.2</junit.version>
         <slf4j.version>2.0.12</slf4j.version>
+        <spring-boot.version>3.2.5</spring-boot.version>
+        <quarkus.version>3.10.0</quarkus.version>
+        <grpc.version>1.63.0</grpc.version>
+        <protobuf.version>3.25.3</protobuf.version>
     </properties>
 
     <dependencyManagement>
@@ -70,6 +78,11 @@
                 <version>${project.version}</version>
             </dependency>
             <dependency>
+                <groupId>io.a2</groupId>
+                <artifactId>a2-processor</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
                 <version>${junit.version}</version>
@@ -79,6 +92,27 @@
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>
                 <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.quarkus</groupId>
+                <artifactId>quarkus-bom</artifactId>
+                <version>${quarkus.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.grpc</groupId>
+                <artifactId>grpc-bom</artifactId>
+                <version>${grpc.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>
