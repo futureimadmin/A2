@@ -1,41 +1,61 @@
 package io.a2.provider.jwt;
 
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.MACSigner;
+import com.nimbusds.jose.crypto.MACVerifier;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import io.a2.annotations.Protocol;
 import io.a2.annotations.TokenType;
 import io.a2.core.SimplePrincipal;
 import io.a2.spi.ProtocolProvider;
+import io.a2.spi.TokenStore;
 import io.a2.spi.model.AuthRequest;
 import io.a2.spi.model.AuthResult;
 import io.a2.spi.model.AuthorizationContext;
 import io.a2.spi.model.RevokeRequest;
 import io.a2.spi.model.TokenRequest;
 import io.a2.spi.model.TokenResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Base64;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Minimal JWT-style provider for demonstration and testing.
- * Production use should integrate a proper JWT library (Nimbus, jjwt, etc.).
- *
- * Token format (simplified): header.payload.signature where payload is base64(principalId:roles:exp)
+ * Production-grade JWT provider powered by Nimbus JOSE + JWT.
+ * Supports HS256 (symmetric) out of the box; extend for RS256/ES256 by injecting a JWK.
  */
 public class JwtProtocolProvider implements ProtocolProvider {
 
-    private final Map<String, Boolean> revoked = new ConcurrentHashMap<>();
-    private final String secret; // in real life use proper key management
+    private static final Logger log = LoggerFactory.getLogger(JwtProtocolProvider.class);
+
+    private final byte[] sharedSecret;
+    private final String issuer;
+    private final TokenStore tokenStore; // optional persistent store
 
     public JwtProtocolProvider() {
-        this("a2-dev-secret-change-me");
+        this(System.getProperty("a2.jwt.secret", "a2-dev-secret-change-me-must-be-at-least-32-bytes-long!!"),
+                System.getProperty("a2.jwt.issuer", "https://a2.local"),
+                null);
     }
 
-    public JwtProtocolProvider(String secret) {
-        this.secret = secret;
+    public JwtProtocolProvider(String secret, String issuer, TokenStore tokenStore) {
+        this.sharedSecret = secret.getBytes(StandardCharsets.UTF_8);
+        this.issuer = issuer;
+        this.tokenStore = tokenStore;
+        if (this.sharedSecret.length < 32) {
+            throw new IllegalArgumentException("JWT secret must be at least 32 bytes for HS256");
+        }
     }
 
     @Override
@@ -47,79 +67,151 @@ public class JwtProtocolProvider implements ProtocolProvider {
     public AuthResult authenticate(AuthRequest request) {
         String token = request.credentials();
         if (token == null || token.isBlank()) {
-            return AuthResult.failure("Missing token");
+            token = request.headers().getOrDefault("Authorization", "");
+            if (token.toLowerCase().startsWith("bearer ")) {
+                token = token.substring(7).trim();
+            }
         }
-        try {
-            String[] parts = token.split("\\.");
-            if (parts.length < 2) {
-                return AuthResult.failure("Malformed token");
-            }
-            String payload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
-            String[] fields = payload.split(":");
-            if (fields.length < 3) {
-                return AuthResult.failure("Invalid payload");
-            }
-            String principalId = fields[0];
-            String rolesCsv = fields[1];
-            long exp = Long.parseLong(fields[2]);
-            if (Instant.now().getEpochSecond() > exp) {
-                return AuthResult.failure("Token expired");
-            }
-            if (revoked.containsKey(token)) {
+        if (token == null || token.isBlank()) {
+            return AuthResult.failure("Missing Bearer token");
+        }
+
+        // Check persistent revoke list first
+        if (tokenStore != null) {
+            var stored = tokenStore.findByTokenValue(token);
+            if (stored.isEmpty()) {
+                // not in store – still try cryptographic validation (stateless mode)
+            } else if (stored.get().revoked()) {
                 return AuthResult.failure("Token revoked");
             }
-            Set<String> roles = rolesCsv.isEmpty() ? Set.of() : Set.of(rolesCsv.split(","));
-            return AuthResult.success(SimplePrincipal.of(principalId, principalId, roles.toArray(new String[0])));
+        }
+
+        try {
+            SignedJWT jwt = SignedJWT.parse(token);
+            if (!jwt.verify(new MACVerifier(sharedSecret))) {
+                return AuthResult.failure("Invalid signature");
+            }
+            JWTClaimsSet claims = jwt.getJWTClaimsSet();
+            Date exp = claims.getExpirationTime();
+            if (exp != null && exp.before(new Date())) {
+                return AuthResult.failure("Token expired");
+            }
+            String sub = claims.getSubject();
+            if (sub == null) {
+                return AuthResult.failure("Missing subject");
+            }
+
+            Set<String> roles = new HashSet<>();
+            Object rolesClaim = claims.getClaim("roles");
+            if (rolesClaim instanceof List<?> list) {
+                list.forEach(r -> roles.add(String.valueOf(r)));
+            } else if (rolesClaim instanceof String s) {
+                for (String r : s.split(",")) roles.add(r.trim());
+            }
+
+            Set<String> perms = new HashSet<>();
+            Object permsClaim = claims.getClaim("permissions");
+            if (permsClaim instanceof List<?> list) {
+                list.forEach(p -> perms.add(String.valueOf(p)));
+            }
+
+            Map<String, Object> attrs = new HashMap<>(claims.getClaims());
+            SimplePrincipal principal = new SimplePrincipal(sub, sub, roles, perms, attrs);
+            return AuthResult.success(principal, attrs);
         } catch (Exception e) {
-            return AuthResult.failure("Token validation failed: " + e.getMessage());
+            log.debug("JWT validation failed: {}", e.getMessage());
+            return AuthResult.failure("JWT validation failed: " + e.getMessage());
         }
     }
 
     @Override
     public TokenResult issueToken(TokenRequest request) {
-        long ttl = request.ttlSeconds() > 0 ? request.ttlSeconds() : 3600;
-        long exp = Instant.now().getEpochSecond() + ttl;
-        String roles = String.join(",", request.claims().getOrDefault("roles", "").toString());
-        // simplistic; real JWT would use proper claims
-        String payload = request.principalId() + ":" + roles + ":" + exp;
-        String encoded = Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(payload.getBytes(StandardCharsets.UTF_8));
-        String token = "eyJhbGciOiJub25lIn0." + encoded + ".sig"; // header.payload.sig
-        String tokenId = UUID.randomUUID().toString();
-        return TokenResult.success(token, tokenId, request.type(), Instant.ofEpochSecond(exp));
+        try {
+            long ttl = request.ttlSeconds() > 0 ? request.ttlSeconds() : 3600;
+            Instant now = Instant.now();
+            Instant exp = now.plusSeconds(ttl);
+            String jti = UUID.randomUUID().toString();
+
+            JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
+                    .subject(request.principalId())
+                    .issuer(issuer)
+                    .issueTime(Date.from(now))
+                    .expirationTime(Date.from(exp))
+                    .jwtID(jti);
+
+            if (request.scopes() != null && !request.scopes().isEmpty()) {
+                builder.claim("scope", String.join(" ", request.scopes()));
+            }
+            if (request.claims() != null) {
+                request.claims().forEach(builder::claim);
+            }
+
+            SignedJWT jwt = new SignedJWT(
+                    new JWSHeader(JWSAlgorithm.HS256),
+                    builder.build()
+            );
+            jwt.sign(new MACSigner(sharedSecret));
+            String serialized = jwt.serialize();
+
+            if (tokenStore != null) {
+                tokenStore.save(new TokenStore.TokenRecord(
+                        jti, serialized, request.type() != null ? request.type() : TokenType.ACCESS,
+                        request.principalId(), issuer, now, exp, false,
+                        request.claims() != null ? (String) request.claims().get("assumed_role") : null,
+                        request.claims() != null ? (String) request.claims().get("impersonated_by") : null,
+                        request.claims() != null ? request.claims() : Map.of()
+                ));
+            }
+
+            return TokenResult.success(serialized, jti,
+                    request.type() != null ? request.type() : TokenType.ACCESS,
+                    exp, request.claims());
+        } catch (JOSEException e) {
+            return TokenResult.failure("Failed to sign JWT: " + e.getMessage());
+        }
     }
 
     @Override
     public TokenResult rotateToken(TokenRequest request) {
-        if (request.existingToken() != null) {
-            revoked.put(request.existingToken(), Boolean.TRUE);
+        if (request.existingToken() != null && tokenStore != null) {
+            tokenStore.findByTokenValue(request.existingToken())
+                    .ifPresent(r -> tokenStore.revoke(r.tokenId()));
         }
         return issueToken(request);
     }
 
     @Override
     public void revokeToken(RevokeRequest request) {
+        if (tokenStore == null) return;
         if (request.tokenId() != null) {
-            // we store full token in this simple impl; production would map id -> token
-            revoked.put(request.tokenId(), Boolean.TRUE);
+            tokenStore.revoke(request.tokenId());
+        }
+        if (request.allForPrincipal() && request.principalId() != null) {
+            tokenStore.revokeAllForPrincipal(request.principalId());
         }
     }
 
     @Override
     public boolean authorize(AuthorizationContext ctx) {
-        if (ctx.requiredRoles().isEmpty() && ctx.requiredPermissions().isEmpty()) {
-            return true;
-        }
-        var principal = ctx.principal();
-        if (principal == null) return false;
+        if (ctx.principal() == null) return false;
+        if (ctx.requiredRoles().isEmpty() && ctx.requiredPermissions().isEmpty()) return true;
+        var p = ctx.principal();
         if (ctx.requireAll()) {
-            return principal.getRoles().containsAll(ctx.requiredRoles())
-                    && principal.getPermissions().containsAll(ctx.requiredPermissions());
+            return p.getRoles().containsAll(ctx.requiredRoles())
+                    && p.getPermissions().containsAll(ctx.requiredPermissions());
         }
         boolean roleOk = ctx.requiredRoles().isEmpty()
-                || ctx.requiredRoles().stream().anyMatch(principal::hasRole);
+                || ctx.requiredRoles().stream().anyMatch(p::hasRole);
         boolean permOk = ctx.requiredPermissions().isEmpty()
-                || ctx.requiredPermissions().stream().anyMatch(p -> principal.getPermissions().contains(p));
+                || ctx.requiredPermissions().stream().anyMatch(perm -> p.getPermissions().contains(perm));
         return roleOk || permOk;
+    }
+
+    @Override
+    public boolean supports(String capability) {
+        return switch (capability) {
+            case "jwt", "hs256", "rotate", "revoke", "introspect" -> true;
+            default -> false;
+        };
     }
 }
