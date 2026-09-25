@@ -1,0 +1,22 @@
+[
+  {
+    "name": "io.a2.quarkus.A2Recorder",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "io.a2.quarkus.A2QuarkusConfig",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "io.a2.quarkus.A2SecurityInterceptor",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "io.a2.quarkus.A2InterceptorBinding",
+    "allDeclaredMethods": true
+  }
+]

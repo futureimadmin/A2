@@ -7,16 +7,11 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Factory for selecting a TokenStore implementation by name.
+ * Factory for TokenStore backends.
  *
- * Supported backends:
- * <ul>
- *   <li>{@code memory} – InMemoryTokenStore (default)</li>
- *   <li>{@code jdbc} – JdbcTokenStore (requires DataSource)</li>
- *   <li>{@code redis} / {@code valkey} – RedisTokenStore (requires RedisCommands)</li>
- *   <li>{@code vault} / {@code tmvault} / {@code openbao} – VaultTokenStore</li>
- *   <li>{@code gcp-secretmanager} – GcpSecretManagerTokenStore</li>
- * </ul>
+ * Supported:
+ * memory, jdbc, redis, valkey, vault, tmvault, openbao,
+ * gcp-secretmanager, aws-secretsmanager, azure-keyvault
  */
 public final class TokenStoreFactory {
 
@@ -50,8 +45,21 @@ public final class TokenStoreFactory {
                 if (client == null) throw new IllegalArgumentException("gcp store requires config.gcpSecretClient");
                 yield new GcpSecretManagerTokenStore(client);
             }
+            case "aws", "aws-secretsmanager", "secretsmanager" -> {
+                AwsSecretsManagerTokenStore.AwsSecretsClient client =
+                        (AwsSecretsManagerTokenStore.AwsSecretsClient) config.get("awsSecretsClient");
+                if (client == null) throw new IllegalArgumentException("aws store requires config.awsSecretsClient");
+                yield new AwsSecretsManagerTokenStore(client);
+            }
+            case "azure", "azure-keyvault", "keyvault" -> {
+                AzureKeyVaultTokenStore.AzureKeyVaultClient client =
+                        (AzureKeyVaultTokenStore.AzureKeyVaultClient) config.get("azureKeyVaultClient");
+                if (client == null) throw new IllegalArgumentException("azure store requires config.azureKeyVaultClient");
+                yield new AzureKeyVaultTokenStore(client);
+            }
             default -> throw new IllegalArgumentException("Unknown TokenStore type: " + type
-                    + ". Supported: memory, jdbc, redis, valkey, vault, tmvault, openbao, gcp-secretmanager");
+                    + ". Supported: memory, jdbc, redis, valkey, vault, tmvault, openbao, "
+                    + "gcp-secretmanager, aws-secretsmanager, azure-keyvault");
         };
     }
 }

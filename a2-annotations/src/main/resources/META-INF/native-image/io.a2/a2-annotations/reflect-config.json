@@ -1,0 +1,16 @@
+[
+  { "name": "io.a2.annotations.A2Protected", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.A2Authenticate", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.A2Authorize", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.A2Token", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.A2Rotate", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.A2Revoke", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.A2Principal", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.A2Context", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.A2Protocol", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.A2AssumeRole", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.A2Impersonate", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.A2ServiceCredential", "allDeclaredMethods": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.Protocol", "allDeclaredFields": true, "allPublicMethods": true },
+  { "name": "io.a2.annotations.TokenType", "allDeclaredFields": true, "allPublicMethods": true }
+]

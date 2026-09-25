@@ -1,0 +1,8 @@
+{
+  "resources": {
+    "includes": [
+      { "pattern": "META-INF/native-image/io\\.a2/.*" },
+      { "pattern": "META-INF/services/.*" }
+    ]
+  }
+}
