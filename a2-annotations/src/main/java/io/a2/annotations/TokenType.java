@@ -9,5 +9,11 @@ public enum TokenType {
     ID,
     API_KEY,
     SESSION,
+    /** Short-lived service-to-service credential (default TTL 1h). */
+    TEMPORARY,
+    /** Credential obtained via AssumeRole. */
+    ASSUMED_ROLE,
+    /** Credential obtained via Impersonation. */
+    IMPERSONATION,
     CUSTOM
 }
