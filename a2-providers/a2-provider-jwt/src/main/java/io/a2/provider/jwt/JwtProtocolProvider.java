@@ -5,6 +5,9 @@ import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jose.crypto.MACVerifier;
+import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jose.crypto.RSASSAVerifier;
+import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import io.a2.annotations.Protocol;
@@ -22,6 +25,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
 import java.time.Instant;
 import java.util.Date;
 import java.util.HashMap;
@@ -32,17 +37,23 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Production-grade JWT provider powered by Nimbus JOSE + JWT.
- * Supports HS256 (symmetric) out of the box; extend for RS256/ES256 by injecting a JWK.
+ * Production JWT provider (Nimbus).
+ * Supports HS256 (symmetric) and RS256 (asymmetric).
  */
 public class JwtProtocolProvider implements ProtocolProvider {
 
     private static final Logger log = LoggerFactory.getLogger(JwtProtocolProvider.class);
 
-    private final byte[] sharedSecret;
-    private final String issuer;
-    private final TokenStore tokenStore; // optional persistent store
+    public enum Mode { HS256, RS256 }
 
+    private final Mode mode;
+    private final byte[] sharedSecret;       // HS256
+    private final RSAPrivateKey privateKey;  // RS256 sign
+    private final RSAPublicKey publicKey;    // RS256 verify
+    private final String issuer;
+    private final TokenStore tokenStore;
+
+    /** HS256 convenience constructor. */
     public JwtProtocolProvider() {
         this(System.getProperty("a2.jwt.secret", "a2-dev-secret-change-me-must-be-at-least-32-bytes-long!!"),
                 System.getProperty("a2.jwt.issuer", "https://a2.local"),
@@ -50,7 +61,10 @@ public class JwtProtocolProvider implements ProtocolProvider {
     }
 
     public JwtProtocolProvider(String secret, String issuer, TokenStore tokenStore) {
+        this.mode = Mode.HS256;
         this.sharedSecret = secret.getBytes(StandardCharsets.UTF_8);
+        this.privateKey = null;
+        this.publicKey = null;
         this.issuer = issuer;
         this.tokenStore = tokenStore;
         if (this.sharedSecret.length < 32) {
@@ -58,10 +72,29 @@ public class JwtProtocolProvider implements ProtocolProvider {
         }
     }
 
-    @Override
-    public Protocol id() {
-        return Protocol.JWT;
+    /** RS256 constructor. */
+    public JwtProtocolProvider(RSAKey rsaKey, String issuer, TokenStore tokenStore) throws JOSEException {
+        this.mode = Mode.RS256;
+        this.sharedSecret = null;
+        this.privateKey = rsaKey.toRSAPrivateKey();
+        this.publicKey = rsaKey.toRSAPublicKey();
+        this.issuer = issuer;
+        this.tokenStore = tokenStore;
     }
+
+    /** RS256 from separate keys. */
+    public JwtProtocolProvider(RSAPrivateKey privateKey, RSAPublicKey publicKey,
+                               String issuer, TokenStore tokenStore) {
+        this.mode = Mode.RS256;
+        this.sharedSecret = null;
+        this.privateKey = privateKey;
+        this.publicKey = publicKey;
+        this.issuer = issuer;
+        this.tokenStore = tokenStore;
+    }
+
+    @Override
+    public Protocol id() { return Protocol.JWT; }
 
     @Override
     public AuthResult authenticate(AuthRequest request) {
@@ -76,30 +109,28 @@ public class JwtProtocolProvider implements ProtocolProvider {
             return AuthResult.failure("Missing Bearer token");
         }
 
-        // Check persistent revoke list first
         if (tokenStore != null) {
             var stored = tokenStore.findByTokenValue(token);
-            if (stored.isEmpty()) {
-                // not in store – still try cryptographic validation (stateless mode)
-            } else if (stored.get().revoked()) {
+            if (stored.isPresent() && stored.get().revoked()) {
                 return AuthResult.failure("Token revoked");
             }
         }
 
         try {
             SignedJWT jwt = SignedJWT.parse(token);
-            if (!jwt.verify(new MACVerifier(sharedSecret))) {
-                return AuthResult.failure("Invalid signature");
-            }
+            boolean valid = switch (mode) {
+                case HS256 -> jwt.verify(new MACVerifier(sharedSecret));
+                case RS256 -> jwt.verify(new RSASSAVerifier(publicKey));
+            };
+            if (!valid) return AuthResult.failure("Invalid signature");
+
             JWTClaimsSet claims = jwt.getJWTClaimsSet();
             Date exp = claims.getExpirationTime();
             if (exp != null && exp.before(new Date())) {
                 return AuthResult.failure("Token expired");
             }
             String sub = claims.getSubject();
-            if (sub == null) {
-                return AuthResult.failure("Missing subject");
-            }
+            if (sub == null) return AuthResult.failure("Missing subject");
 
             Set<String> roles = new HashSet<>();
             Object rolesClaim = claims.getClaim("roles");
@@ -116,8 +147,7 @@ public class JwtProtocolProvider implements ProtocolProvider {
             }
 
             Map<String, Object> attrs = new HashMap<>(claims.getClaims());
-            SimplePrincipal principal = new SimplePrincipal(sub, sub, roles, perms, attrs);
-            return AuthResult.success(principal, attrs);
+            return AuthResult.success(new SimplePrincipal(sub, sub, roles, perms, attrs), attrs);
         } catch (Exception e) {
             log.debug("JWT validation failed: {}", e.getMessage());
             return AuthResult.failure("JWT validation failed: " + e.getMessage());
@@ -146,11 +176,14 @@ public class JwtProtocolProvider implements ProtocolProvider {
                 request.claims().forEach(builder::claim);
             }
 
-            SignedJWT jwt = new SignedJWT(
-                    new JWSHeader(JWSAlgorithm.HS256),
-                    builder.build()
-            );
-            jwt.sign(new MACSigner(sharedSecret));
+            JWSAlgorithm alg = mode == Mode.HS256 ? JWSAlgorithm.HS256 : JWSAlgorithm.RS256;
+            SignedJWT jwt = new SignedJWT(new JWSHeader(alg), builder.build());
+
+            if (mode == Mode.HS256) {
+                jwt.sign(new MACSigner(sharedSecret));
+            } else {
+                jwt.sign(new RSASSASigner(privateKey));
+            }
             String serialized = jwt.serialize();
 
             if (tokenStore != null) {
@@ -183,9 +216,7 @@ public class JwtProtocolProvider implements ProtocolProvider {
     @Override
     public void revokeToken(RevokeRequest request) {
         if (tokenStore == null) return;
-        if (request.tokenId() != null) {
-            tokenStore.revoke(request.tokenId());
-        }
+        if (request.tokenId() != null) tokenStore.revoke(request.tokenId());
         if (request.allForPrincipal() && request.principalId() != null) {
             tokenStore.revokeAllForPrincipal(request.principalId());
         }
@@ -210,7 +241,7 @@ public class JwtProtocolProvider implements ProtocolProvider {
     @Override
     public boolean supports(String capability) {
         return switch (capability) {
-            case "jwt", "hs256", "rotate", "revoke", "introspect" -> true;
+            case "jwt", "hs256", "rs256", "rotate", "revoke", "introspect" -> true;
             default -> false;
         };
     }

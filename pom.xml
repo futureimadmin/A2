@@ -26,6 +26,7 @@
             <id>futureimadmin</id>
             <name>futureimadmin</name>
             <url>https://github.com/futureimadmin</url>
+            <email>anantha.kommaraju@futureim.in</email>
         </developer>
     </developers>
 
@@ -33,7 +34,13 @@
         <connection>scm:git:git://github.com/futureimadmin/A2.git</connection>
         <developerConnection>scm:git:ssh://github.com:futureimadmin/A2.git</developerConnection>
         <url>https://github.com/futureimadmin/A2</url>
+        <tag>HEAD</tag>
     </scm>
+
+    <issueManagement>
+        <system>GitHub</system>
+        <url>https://github.com/futureimadmin/A2/issues</url>
+    </issueManagement>
 
     <modules>
         <module>a2-annotations</module>
@@ -58,6 +65,9 @@
         <quarkus.version>3.10.0</quarkus.version>
         <grpc.version>1.63.0</grpc.version>
         <protobuf.version>3.25.3</protobuf.version>
+        <nimbus.version>9.40</nimbus.version>
+        <!-- Maven Central / release -->
+        <project.build.outputTimestamp>2026-09-25T00:00:00Z</project.build.outputTimestamp>
     </properties>
 
     <dependencyManagement>
@@ -92,6 +102,11 @@
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>
                 <version>${slf4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.nimbusds</groupId>
+                <artifactId>nimbus-jose-jwt</artifactId>
+                <version>${nimbus.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.springframework.boot</groupId>
@@ -133,7 +148,110 @@
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>3.2.5</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-source-plugin</artifactId>
+                    <version>3.3.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <version>3.6.3</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-gpg-plugin</artifactId>
+                    <version>3.2.4</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.sonatype.central</groupId>
+                    <artifactId>central-publishing-maven-plugin</artifactId>
+                    <version>0.5.0</version>
+                </plugin>
             </plugins>
         </pluginManagement>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+            </plugin>
+        </plugins>
     </build>
+
+    <!--
+      Release profile for Maven Central.
+      Ready but NOT activated by default.
+      Usage (when you are ready to publish):
+        mvn -Prelease clean deploy
+      Requires:
+        - ~/.m2/settings.xml with central server credentials
+        - GPG key for signing
+        - Sonatype Central portal account
+    -->
+    <profiles>
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals><goal>jar-no-fork</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <configuration>
+                            <failOnError>false</failOnError>
+                            <doclint>none</doclint>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals><goal>jar</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals><goal>sign</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>false</autoPublish>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+    <!--
+      Distribution management for Maven Central (Sonatype Central Portal).
+      Credentials go in settings.xml, NOT here.
+    -->
+    <distributionManagement>
+        <repository>
+            <id>central</id>
+            <name>Sonatype Central</name>
+            <url>https://central.sonatype.com/api/v1/publisher</url>
+        </repository>
+    </distributionManagement>
 </project>
