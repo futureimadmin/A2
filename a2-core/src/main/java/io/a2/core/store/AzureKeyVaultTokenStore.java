@@ -41,7 +41,6 @@ public class AzureKeyVaultTokenStore implements TokenStore {
 
     @Override
     public void save(TokenRecord record) {
-        // Key Vault secret names cannot contain '/'
         String name = prefix + record.tokenId().replace('/', '-');
         client.setSecret(name, serialize(record));
         valueIndex.put(record.tokenValue(), record.tokenId());
@@ -82,7 +81,8 @@ public class AzureKeyVaultTokenStore implements TokenStore {
 
     @Override
     public void revokeAllForPrincipal(String principalId) {
-        principalIndex.getOrDefault(principalId, List.of()).forEach(this::revoke);
+        List<String> ids = new ArrayList<>(principalIndex.getOrDefault(principalId, List.of()));
+        ids.forEach(this::revoke);
     }
 
     @Override

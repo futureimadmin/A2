@@ -3,10 +3,8 @@ package io.a2.core.store;
 import io.a2.annotations.TokenType;
 import io.a2.spi.TokenStore;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -83,14 +81,14 @@ public class AwsSecretsManagerTokenStore implements TokenStore {
 
     @Override
     public void revokeAllForPrincipal(String principalId) {
-        principalIndex.getOrDefault(principalId, List.of()).forEach(this::revoke);
+        List<String> ids = new ArrayList<>(principalIndex.getOrDefault(principalId, List.of()));
+        ids.forEach(this::revoke);
     }
 
     @Override
     public int purgeExpired() {
         int purged = 0;
         for (String name : client.listSecrets(prefix)) {
-            String id = name.startsWith(prefix) ? name.substring(prefix.length()) : name;
             Optional<TokenRecord> r = client.getSecret(name).flatMap(AwsSecretsManagerTokenStore::deserialize);
             if (r.isPresent() && (r.get().expiresAt().isBefore(Instant.now()) || r.get().revoked())) {
                 client.deleteSecret(name);
