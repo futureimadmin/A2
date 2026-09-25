@@ -2,6 +2,10 @@ package io.a2.provider.saml;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import javax.xml.crypto.dsig.XMLSignature;
 import javax.xml.crypto.dsig.XMLSignatureFactory;
@@ -13,10 +17,11 @@ import java.security.PublicKey;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Instant;
-import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -24,58 +29,17 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * SAML 2.0 Assertion Validator.
- *
- * Performs the checks required by the SAML core specification:
- * <ul>
- *   <li>XML well-formedness</li>
- *   <li>Issuer match</li>
- *   <li>AudienceRestriction (Audience must include SP entityID)</li>
- *   <li>Conditions time window (NotBefore / NotOnOrAfter) with clock skew</li>
- *   <li>Subject Confirmation (Bearer) time checks</li>
- *   <li>Optional XML-DSig signature validation against IdP certificate</li>
- *   <li>NameID + Attribute extraction</li>
- * </ul>
- *
- * Package: {@code io.a2.provider.saml}
+ * SAML 2.0 assertion validator.
+ * Checks issuer, audience, NotBefore/NotOnOrAfter, optional signature.
  */
 public class SamlAssertionValidator {
 
     private static final Logger log = LoggerFactory.getLogger(SamlAssertionValidator.class);
 
-    /** Allowed clock skew in seconds (default 2 minutes). */
-    private final long clockSkewSeconds;
-
-    /** Expected SP entity ID (audience). */
     private final String expectedAudience;
-
-    /** Expected IdP entity ID (issuer). Null = any. */
     private final String expectedIssuer;
-
-    /** IdP signing certificate (optional – if null, signature check is skipped with a warning). */
     private final X509Certificate idpCertificate;
-
-    // Patterns for element extraction (namespace-tolerant)
-    private static final Pattern ISSUER_PATTERN =
-            Pattern.compile("<(?:[a-zA-Z0-9]+:)?Issuer[^>]*>([^<]+)</(?:[a-zA-Z0-9]+:)?Issuer>",
-                    Pattern.CASE_INSENSITIVE);
-    private static final Pattern NAMEID_PATTERN =
-            Pattern.compile("<(?:[a-zA-Z0-9]+:)?NameID[^>]*>([^<]+)</(?:[a-zA-Z0-9]+:)?NameID>",
-                    Pattern.CASE_INSENSITIVE);
-    private static final Pattern AUDIENCE_PATTERN =
-            Pattern.compile("<(?:[a-zA-Z0-9]+:)?Audience>([^<]+)</(?:[a-zA-Z0-9]+:)?Audience>",
-                    Pattern.CASE_INSENSITIVE);
-    private static final Pattern NOT_BEFORE_PATTERN =
-            Pattern.compile("NotBefore=\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
-    private static final Pattern NOT_ON_OR_AFTER_PATTERN =
-            Pattern.compile("NotOnOrAfter=\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
-    private static final Pattern ATTR_PATTERN =
-            Pattern.compile(
-                    "<(?:[a-zA-Z0-9]+:)?Attribute\\s+[^>]*Name=\"([^\"]+)\"[^>]*>"
-                            + "[\\s\\S]*?<(?:[a-zA-Z0-9]+:)?AttributeValue[^>]*>([^<]*)</(?:[a-zA-Z0-9]+:)?AttributeValue>",
-                    Pattern.CASE_INSENSITIVE);
-    private static final Pattern SESSION_INDEX_PATTERN =
-            Pattern.compile("SessionIndex=\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+    private final long clockSkewSeconds;
 
     public SamlAssertionValidator(String expectedAudience, String expectedIssuer,
                                   X509Certificate idpCertificate, long clockSkewSeconds) {
@@ -85,138 +49,157 @@ public class SamlAssertionValidator {
         this.clockSkewSeconds = clockSkewSeconds > 0 ? clockSkewSeconds : 120;
     }
 
-    public SamlAssertionValidator(String expectedAudience) {
-        this(expectedAudience, null, null, 120);
-    }
-
-    /**
-     * Validate a SAMLResponse (Base64 or raw XML) and return structured result.
-     */
     public ValidationResult validate(String samlResponse) {
-        if (samlResponse == null || samlResponse.isBlank()) {
-            return ValidationResult.failure("Missing SAMLResponse");
-        }
-
-        String xml;
         try {
-            xml = new String(Base64.getDecoder().decode(samlResponse.replaceAll("\\s", "")),
-                    StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException e) {
-            xml = samlResponse; // already plain XML
-        }
+            String xml = decodeIfNeeded(samlResponse);
+            String nameId = extract(xml, "NameID");
+            String issuer = extract(xml, "Issuer");
+            String notBefore = extractAttr(xml, "Conditions", "NotBefore");
+            String notOnOrAfter = extractAttr(xml, "Conditions", "NotOnOrAfter");
+            List<String> audiences = extractAll(xml, "Audience");
+            String sessionIndex = extract(xml, "SessionIndex");
+            Map<String, String> attributes = extractAttributes(xml);
 
-        // 1. Basic structure
-        if (!xml.contains("Assertion") && !xml.contains("assertion")) {
-            return ValidationResult.failure("No Assertion element found in SAMLResponse");
-        }
-
-        // 2. Issuer
-        String issuer = extract(ISSUER_PATTERN, xml);
-        if (issuer == null) {
-            return ValidationResult.failure("Missing Issuer");
-        }
-        if (expectedIssuer != null && !expectedIssuer.equals(issuer)) {
-            return ValidationResult.failure("Issuer mismatch: expected " + expectedIssuer + " got " + issuer);
-        }
-
-        // 3. AudienceRestriction
-        List<String> audiences = extractAll(AUDIENCE_PATTERN, xml);
-        if (expectedAudience != null && !expectedAudience.isBlank()) {
-            boolean audienceOk = audiences.stream().anyMatch(a -> a.equals(expectedAudience));
-            if (!audienceOk) {
-                return ValidationResult.failure(
-                        "AudienceRestriction failed: expected " + expectedAudience + " in " + audiences);
+            if (nameId == null || nameId.isBlank()) {
+                return ValidationResult.failure("Missing NameID");
             }
-        }
-
-        // 4. Conditions time window
-        Instant now = Instant.now();
-        Instant notBefore = parseTime(extract(NOT_BEFORE_PATTERN, xml));
-        Instant notOnOrAfter = parseTime(extract(NOT_ON_OR_AFTER_PATTERN, xml));
-
-        if (notBefore != null && now.plusSeconds(clockSkewSeconds).isBefore(notBefore)) {
-            return ValidationResult.failure("Assertion NotBefore in the future: " + notBefore);
-        }
-        if (notOnOrAfter != null && now.minusSeconds(clockSkewSeconds).isAfter(notOnOrAfter)
-                || (notOnOrAfter != null && !now.minusSeconds(clockSkewSeconds).isBefore(notOnOrAfter))) {
-            // NotOnOrAfter is exclusive
-            if (now.minusSeconds(clockSkewSeconds).compareTo(notOnOrAfter) >= 0) {
-                return ValidationResult.failure("Assertion expired (NotOnOrAfter=" + notOnOrAfter + ")");
+            if (expectedIssuer != null && issuer != null && !expectedIssuer.equals(issuer)) {
+                return ValidationResult.failure("Issuer mismatch: expected " + expectedIssuer + " got " + issuer);
             }
-        }
+            if (expectedAudience != null && !audiences.isEmpty() && !audiences.contains(expectedAudience)) {
+                return ValidationResult.failure("Audience restriction failed; expected " + expectedAudience);
+            }
 
-        // 5. NameID (Subject)
-        String nameId = extract(NAMEID_PATTERN, xml);
-        if (nameId == null || nameId.isBlank()) {
-            return ValidationResult.failure("Missing NameID in Subject");
-        }
-
-        // 6. Attributes
-        Map<String, String> attributes = new HashMap<>();
-        Matcher attrMatcher = ATTR_PATTERN.matcher(xml);
-        while (attrMatcher.find()) {
-            attributes.put(attrMatcher.group(1), attrMatcher.group(2).trim());
-        }
-
-        // 7. SessionIndex (optional)
-        String sessionIndex = extract(SESSION_INDEX_PATTERN, xml);
-
-        // 8. XML Signature (optional but recommended)
-        boolean signatureValid = false;
-        if (idpCertificate != null) {
-            try {
-                signatureValid = verifyXmlSignature(xml, idpCertificate.getPublicKey());
-                if (!signatureValid) {
-                    return ValidationResult.failure("XML Signature validation failed");
+            Instant now = Instant.now();
+            if (notBefore != null) {
+                Instant nb = Instant.parse(notBefore);
+                if (now.plusSeconds(clockSkewSeconds).isBefore(nb)) {
+                    return ValidationResult.failure("Assertion not yet valid (NotBefore)");
                 }
-            } catch (Exception e) {
-                log.debug("Signature validation error: {}", e.getMessage());
-                return ValidationResult.failure("XML Signature validation error: " + e.getMessage());
             }
-        } else {
-            log.warn("No IdP certificate configured – skipping XML Signature validation");
-        }
+            Instant notOnOrAfterInst = null;
+            if (notOnOrAfter != null) {
+                notOnOrAfterInst = Instant.parse(notOnOrAfter);
+                if (now.minusSeconds(clockSkewSeconds).isAfter(notOnOrAfterInst)
+                        || now.minusSeconds(clockSkewSeconds).equals(notOnOrAfterInst)) {
+                    return ValidationResult.failure("Assertion expired (NotOnOrAfter)");
+                }
+            }
 
-        return ValidationResult.success(nameId, issuer, audiences, attributes,
-                sessionIndex, notBefore, notOnOrAfter, signatureValid);
+            boolean sigValid = false;
+            if (idpCertificate != null) {
+                sigValid = verifySignature(xml, idpCertificate.getPublicKey());
+                if (!sigValid) {
+                    return ValidationResult.failure("Signature validation failed");
+                }
+            }
+
+            return ValidationResult.success(nameId, issuer, audiences, notOnOrAfterInst,
+                    sessionIndex, attributes, sigValid);
+        } catch (Exception e) {
+            log.debug("SAML validation error: {}", e.getMessage());
+            return ValidationResult.failure("SAML validation error: " + e.getMessage());
+        }
     }
 
-    /**
-     * Validate XML-DSig signature using the JDK XML Digital Signature API.
-     */
-    boolean verifyXmlSignature(String xml, PublicKey publicKey) throws Exception {
-        DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
-        dbf.setNamespaceAware(true);
-        // XXE protection
-        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-        dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
-        dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-        dbf.setXIncludeAware(false);
-        dbf.setExpandEntityReferences(false);
-
-        var doc = dbf.newDocumentBuilder()
-                .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
-
-        var nl = doc.getElementsByTagNameNS(XMLSignature.XMLNS, "Signature");
-        if (nl.getLength() == 0) {
-            // try without namespace
-            nl = doc.getElementsByTagName("Signature");
+    private static String decodeIfNeeded(String input) {
+        String t = input.trim();
+        if (t.startsWith("<")) return t;
+        try {
+            return new String(Base64.getDecoder().decode(t.replaceAll("\\s", "")), StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return t;
         }
-        if (nl.getLength() == 0) {
-            log.debug("No Signature element found");
+    }
+
+    private static String extract(String xml, String localName) {
+        Pattern p = Pattern.compile(
+                "<(?:[a-zA-Z0-9]+:)?" + localName + "[^>]*>([^<]*)</(?:[a-zA-Z0-9]+:)?" + localName + ">",
+                Pattern.CASE_INSENSITIVE);
+        Matcher m = p.matcher(xml);
+        return m.find() ? m.group(1).trim() : null;
+    }
+
+    private static String extractAttr(String xml, String element, String attr) {
+        Pattern p = Pattern.compile(
+                "<(?:[a-zA-Z0-9]+:)?" + element + "[^>]*\\b" + attr + "=\"([^\"]+)\"",
+                Pattern.CASE_INSENSITIVE);
+        Matcher m = p.matcher(xml);
+        return m.find() ? m.group(1).trim() : null;
+    }
+
+    private static List<String> extractAll(String xml, String localName) {
+        List<String> out = new ArrayList<>();
+        Pattern p = Pattern.compile(
+                "<(?:[a-zA-Z0-9]+:)?" + localName + "[^>]*>([^<]*)</(?:[a-zA-Z0-9]+:)?" + localName + ">",
+                Pattern.CASE_INSENSITIVE);
+        Matcher m = p.matcher(xml);
+        while (m.find()) out.add(m.group(1).trim());
+        return out;
+    }
+
+    private static Map<String, String> extractAttributes(String xml) {
+        Map<String, String> attrs = new HashMap<>();
+        Pattern p = Pattern.compile(
+                "<(?:[a-zA-Z0-9]+:)?Attribute\\s+[^>]*Name=\"([^\"]+)\"[^>]*>\\s*"
+                        + "<(?:[a-zA-Z0-9]+:)?AttributeValue[^>]*>([^<]*)</(?:[a-zA-Z0-9]+:)?AttributeValue>",
+                Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+        Matcher m = p.matcher(xml);
+        while (m.find()) {
+            attrs.put(m.group(1).trim(), m.group(2).trim());
+        }
+        return attrs;
+    }
+
+    private boolean verifySignature(String xml, PublicKey publicKey) {
+        try {
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            dbf.setNamespaceAware(true);
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            dbf.setXIncludeAware(false);
+            dbf.setExpandEntityReferences(false);
+
+            Document doc = dbf.newDocumentBuilder()
+                    .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+
+            NodeList nl = doc.getElementsByTagNameNS(XMLSignature.XMLNS, "Signature");
+            if (nl.getLength() == 0) {
+                nl = doc.getElementsByTagName("Signature");
+            }
+            if (nl.getLength() == 0) {
+                log.debug("No Signature element found");
+                return false;
+            }
+
+            registerIdAttributes(doc.getDocumentElement());
+
+            XMLSignatureFactory factory = XMLSignatureFactory.getInstance("DOM");
+            DOMValidateContext valContext = new DOMValidateContext(publicKey, nl.item(0));
+
+            XMLSignature signature = factory.unmarshalXMLSignature(valContext);
+            return signature.validate(valContext);
+        } catch (Exception e) {
+            log.debug("Signature verify failed: {}", e.getMessage());
             return false;
         }
-
-        XMLSignatureFactory factory = XMLSignatureFactory.getInstance("DOM");
-        DOMValidateContext valContext = new DOMValidateContext(publicKey, nl.item(0));
-        // Allow ID attribute for reference resolution
-        valContext.setIdAttributeNS(null, "ID");
-
-        XMLSignature signature = factory.unmarshalXMLSignature(valContext);
-        return signature.validate(valContext);
     }
 
-    /** Load an X.509 certificate from PEM or DER bytes. */
+    private static void registerIdAttributes(Node node) {
+        if (node == null) return;
+        if (node.getNodeType() == Node.ELEMENT_NODE) {
+            Element el = (Element) node;
+            if (el.hasAttribute("ID")) el.setIdAttribute("ID", true);
+            if (el.hasAttribute("Id")) el.setIdAttribute("Id", true);
+            if (el.hasAttribute("id")) el.setIdAttribute("id", true);
+        }
+        NodeList children = node.getChildNodes();
+        for (int i = 0; i < children.getLength(); i++) {
+            registerIdAttributes(children.item(i));
+        }
+    }
+
     public static X509Certificate loadCertificate(byte[] certBytes) throws Exception {
         CertificateFactory cf = CertificateFactory.getInstance("X.509");
         return (X509Certificate) cf.generateCertificate(new ByteArrayInputStream(certBytes));
@@ -231,69 +214,40 @@ public class SamlAssertionValidator {
         return loadCertificate(der);
     }
 
-    // --- helpers ---
-
-    private static String extract(Pattern p, String xml) {
-        Matcher m = p.matcher(xml);
-        return m.find() ? m.group(1).trim() : null;
-    }
-
-    private static List<String> extractAll(Pattern p, String xml) {
-        List<String> list = new ArrayList<>();
-        Matcher m = p.matcher(xml);
-        while (m.find()) list.add(m.group(1).trim());
-        return list;
-    }
-
-    private static Instant parseTime(String value) {
-        if (value == null || value.isBlank()) return null;
-        try {
-            return Instant.parse(value);
-        } catch (DateTimeParseException e) {
-            return null;
-        }
-    }
-
-    // -------------------------------------------------------------------------
-
     public static final class ValidationResult {
         private final boolean success;
         private final String error;
         private final String nameId;
         private final String issuer;
         private final List<String> audiences;
-        private final Map<String, String> attributes;
-        private final String sessionIndex;
-        private final Instant notBefore;
         private final Instant notOnOrAfter;
+        private final String sessionIndex;
+        private final Map<String, String> attributes;
         private final boolean signatureValid;
 
         private ValidationResult(boolean success, String error, String nameId, String issuer,
-                                 List<String> audiences, Map<String, String> attributes,
-                                 String sessionIndex, Instant notBefore, Instant notOnOrAfter,
-                                 boolean signatureValid) {
+                                 List<String> audiences, Instant notOnOrAfter, String sessionIndex,
+                                 Map<String, String> attributes, boolean signatureValid) {
             this.success = success;
             this.error = error;
             this.nameId = nameId;
             this.issuer = issuer;
-            this.audiences = audiences != null ? List.copyOf(audiences) : List.of();
-            this.attributes = attributes != null ? Map.copyOf(attributes) : Map.of();
-            this.sessionIndex = sessionIndex;
-            this.notBefore = notBefore;
+            this.audiences = audiences != null ? audiences : List.of();
             this.notOnOrAfter = notOnOrAfter;
+            this.sessionIndex = sessionIndex;
+            this.attributes = attributes != null ? attributes : Map.of();
             this.signatureValid = signatureValid;
         }
 
         public static ValidationResult success(String nameId, String issuer, List<String> audiences,
-                                               Map<String, String> attributes, String sessionIndex,
-                                               Instant notBefore, Instant notOnOrAfter,
-                                               boolean signatureValid) {
-            return new ValidationResult(true, null, nameId, issuer, audiences, attributes,
-                    sessionIndex, notBefore, notOnOrAfter, signatureValid);
+                                               Instant notOnOrAfter, String sessionIndex,
+                                               Map<String, String> attributes, boolean signatureValid) {
+            return new ValidationResult(true, null, nameId, issuer, audiences, notOnOrAfter,
+                    sessionIndex, attributes, signatureValid);
         }
 
         public static ValidationResult failure(String error) {
-            return new ValidationResult(false, error, null, null, null, null, null, null, null, false);
+            return new ValidationResult(false, error, null, null, List.of(), null, null, Map.of(), false);
         }
 
         public boolean isSuccess() { return success; }
@@ -301,18 +255,21 @@ public class SamlAssertionValidator {
         public String getNameId() { return nameId; }
         public String getIssuer() { return issuer; }
         public List<String> getAudiences() { return audiences; }
-        public Map<String, String> getAttributes() { return attributes; }
-        public String getSessionIndex() { return sessionIndex; }
-        public Instant getNotBefore() { return notBefore; }
         public Instant getNotOnOrAfter() { return notOnOrAfter; }
+        public String getSessionIndex() { return sessionIndex; }
+        public Map<String, String> getAttributes() { return attributes; }
         public boolean isSignatureValid() { return signatureValid; }
 
         public Set<String> rolesFromAttributes() {
-            String roles = attributes.getOrDefault("Role",
-                    attributes.getOrDefault("roles",
-                            attributes.getOrDefault("http://schemas.microsoft.com/ws/2008/06/identity/claims/role", "")));
-            if (roles == null || roles.isBlank()) return Set.of();
-            return Set.of(roles.split("[,;\\s]+"));
+            Set<String> roles = new HashSet<>();
+            for (var e : attributes.entrySet()) {
+                if (e.getKey().toLowerCase().contains("role")) {
+                    for (String part : e.getValue().split(",")) {
+                        if (!part.isBlank()) roles.add(part.trim());
+                    }
+                }
+            }
+            return roles;
         }
     }
 }
