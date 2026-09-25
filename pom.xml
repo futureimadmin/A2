@@ -66,7 +66,17 @@
         <grpc.version>1.63.0</grpc.version>
         <protobuf.version>3.25.3</protobuf.version>
         <nimbus.version>9.40</nimbus.version>
-        <!-- Maven Central / release -->
+        <jacoco.version>0.8.12</jacoco.version>
+        <sonar-maven-plugin.version>4.0.0.4121</sonar-maven-plugin.version>
+        <!-- SonarQube / SonarCloud defaults (override via -D or env) -->
+        <sonar.organization>futureimadmin</sonar.organization>
+        <sonar.projectKey>futureimadmin_A2</sonar.projectKey>
+        <sonar.projectName>A2</sonar.projectName>
+        <sonar.java.source>${java.version}</sonar.java.source>
+        <sonar.coverage.jacoco.xmlReportPaths>
+            ${project.basedir}/target/site/jacoco/jacoco.xml,
+            ${maven.multiModuleProjectDirectory}/a2-core/target/site/jacoco/jacoco.xml
+        </sonar.coverage.jacoco.xmlReportPaths>
         <project.build.outputTimestamp>2026-09-25T00:00:00Z</project.build.outputTimestamp>
     </properties>
 
@@ -168,6 +178,16 @@
                     <artifactId>central-publishing-maven-plugin</artifactId>
                     <version>0.5.0</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.jacoco</groupId>
+                    <artifactId>jacoco-maven-plugin</artifactId>
+                    <version>${jacoco.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.sonarsource.scanner.maven</groupId>
+                    <artifactId>sonar-maven-plugin</artifactId>
+                    <version>${sonar-maven-plugin.version}</version>
+                </plugin>
             </plugins>
         </pluginManagement>
 
@@ -176,19 +196,29 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
             </plugin>
+            <!-- JaCoCo always available; activated reports via goals or -Psonar -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
-    <!--
-      Release profile for Maven Central.
-      Ready but NOT activated by default.
-      Usage (when you are ready to publish):
-        mvn -Prelease clean deploy
-      Requires:
-        - ~/.m2/settings.xml with central server credentials
-        - GPG key for signing
-        - Sonatype Central portal account
-    -->
     <profiles>
         <profile>
             <id>release</id>
@@ -241,12 +271,25 @@
                 </plugins>
             </build>
         </profile>
+
+        <!--
+          Local / CI Sonar analysis:
+            export SONAR_TOKEN=...
+            mvn -Psonar clean verify sonar:sonar
+        -->
+        <profile>
+            <id>sonar</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.sonarsource.scanner.maven</groupId>
+                        <artifactId>sonar-maven-plugin</artifactId>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
     </profiles>
 
-    <!--
-      Distribution management for Maven Central (Sonatype Central Portal).
-      Credentials go in settings.xml, NOT here.
-    -->
     <distributionManagement>
         <repository>
             <id>central</id>

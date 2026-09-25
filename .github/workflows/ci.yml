@@ -65,8 +65,6 @@ jobs:
           distribution: temurin
           cache: maven
 
-      # -pl a2-core -am builds dependencies; -Dtest would otherwise fail on modules
-      # that have no matching test class (Surefire 3.x default).
       - name: Run Redis integration tests
         env:
           REDIS_HOST: localhost
@@ -76,8 +74,61 @@ jobs:
           -Dtest=RedisTokenStoreIntegrationTest
           -Dsurefire.failIfNoSpecifiedTests=false
 
-  # Publish is manual only — not triggered by push/PR.
-  # Activate via workflow_dispatch on main when ready to release.
+  # SonarQube / SonarCloud static analysis + coverage
+  # Requires repository secret SONAR_TOKEN.
+  # Optional: SONAR_HOST_URL (defaults to https://sonarcloud.io).
+  # Optional: SONAR_ORGANIZATION, SONAR_PROJECT_KEY (defaults below).
+  sonar:
+    name: SonarQube Analysis
+    runs-on: ubuntu-latest
+    needs: build
+    # Skip cleanly when token is not configured (open-source / fork PRs)
+    if: ${{ secrets.SONAR_TOKEN != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history for blame / new-code detection
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+          cache: maven
+
+      - name: Cache SonarQube packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Build, test, coverage & Sonar analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          HOST_URL="${SONAR_HOST_URL:-https://sonarcloud.io}"
+          ORG="${{ vars.SONAR_ORGANIZATION || 'futureimadmin' }}"
+          PROJECT_KEY="${{ vars.SONAR_PROJECT_KEY || 'futureimadmin_A2' }}"
+
+          mvn -B -ntp clean verify \
+            org.jacoco:jacoco-maven-plugin:prepare-agent \
+            org.jacoco:jacoco-maven-plugin:report \
+            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.token="$SONAR_TOKEN" \
+            -Dsonar.host.url="$HOST_URL" \
+            -Dsonar.organization="$ORG" \
+            -Dsonar.projectKey="$PROJECT_KEY" \
+            -Dsonar.projectName="A2" \
+            -Dsonar.java.source=17 \
+            -Dsonar.coverage.jacoco.xmlReportPaths=**/target/site/jacoco/jacoco.xml \
+            -Dsonar.qualitygate.wait=true
+
   publish:
     name: Publish to Maven Central
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
