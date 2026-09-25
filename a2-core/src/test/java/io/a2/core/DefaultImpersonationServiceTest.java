@@ -1,8 +1,6 @@
 package io.a2.core;
 
-import io.a2.annotations.Protocol;
 import io.a2.core.store.InMemoryTokenStore;
-import io.a2.provider.jwt.JwtProtocolProvider;
 import io.a2.spi.ImpersonationService;
 import io.a2.spi.TokenStore;
 import io.a2.spi.model.TokenResult;
@@ -17,29 +15,21 @@ import static org.junit.jupiter.api.Assertions.*;
 class DefaultImpersonationServiceTest {
 
     private ImpersonationService imp;
-    private TokenStore store;
 
     @BeforeEach
     void setUp() {
-        store = new InMemoryTokenStore();
-        JwtProtocolProvider jwt = new JwtProtocolProvider(
-                "a2-dev-secret-change-me-must-be-at-least-32-bytes-long!!",
-                "https://a2.test", store);
-        A2Runtime runtime = A2Runtime.get();
-        runtime.register(jwt);
-        runtime.setTokenService(new PersistentTokenService(store));
-        imp = new DefaultImpersonationService(runtime.tokenService(), store);
+        TokenStore store = new InMemoryTokenStore();
+        DefaultTokenService tokenService = new DefaultTokenService();
+        A2Runtime.get().setTokenService(tokenService);
+        imp = new DefaultImpersonationService(tokenService, store);
     }
 
     @Test
-    void assumeRoleIssuesTokenWithClaims() {
+    void assumeRoleIssuesToken() {
         SimplePrincipal caller = SimplePrincipal.of("svc-a", "svc-a", "service");
         TokenResult result = imp.assumeRole(caller, "billing-admin", 3600, "test-session");
-        assertTrue(result.isSuccess());
+        assertTrue(result.isSuccess(), () -> result.error().orElse("unknown"));
         assertTrue(result.token().isPresent());
-        assertTrue(result.claims().containsKey("assumed_role")
-                || result.claims().getOrDefault("assumed_role", "billing-admin").equals("billing-admin")
-                || true); // claims may be on stored record
         assertTrue(result.expiresAt().isPresent());
     }
 
@@ -49,7 +39,7 @@ class DefaultImpersonationServiceTest {
         TokenResult result = imp.assumeRole(caller, "role-x", 99999, "s");
         assertTrue(result.isSuccess());
         long ttl = result.expiresAt().get().getEpochSecond() - java.time.Instant.now().getEpochSecond();
-        assertTrue(ttl <= 3600 + 5); // small clock tolerance
+        assertTrue(ttl <= 3600 + 5);
     }
 
     @Test
@@ -72,7 +62,13 @@ class DefaultImpersonationServiceTest {
         SimplePrincipal admin = new SimplePrincipal("admin1", "Admin",
                 Set.of("admin"), Set.of("impersonate"), Map.of());
         TokenResult result = imp.impersonate(admin, "customer-1", 1800, "support-ticket-9");
-        assertTrue(result.isSuccess());
+        assertTrue(result.isSuccess(), () -> result.error().orElse("unknown"));
         assertTrue(result.token().isPresent());
+    }
+
+    @Test
+    void nullCallerFails() {
+        assertFalse(imp.assumeRole(null, "role", 3600, "s").isSuccess());
+        assertFalse(imp.impersonate(null, "t", 1800, "r").isSuccess());
     }
 }

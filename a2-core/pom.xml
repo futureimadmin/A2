@@ -26,13 +26,6 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
         </dependency>
-        <!-- JWT provider needed by impersonation tests -->
-        <dependency>
-            <groupId>io.a2</groupId>
-            <artifactId>a2-provider-jwt</artifactId>
-            <version>${project.version}</version>
-            <scope>test</scope>
-        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
