@@ -10,7 +10,7 @@
     </parent>
 
     <artifactId>a2-provider-jwt</artifactId>
-    <name>A2 JWT Provider</name>
+    <name>A2 JWT Provider (Nimbus)</name>
 
     <dependencies>
         <dependency>
@@ -20,6 +20,15 @@
         <dependency>
             <groupId>io.a2</groupId>
             <artifactId>a2-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>9.37.3</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
         </dependency>
     </dependencies>
 </project>
