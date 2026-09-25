@@ -1,42 +1,42 @@
 # Publishing A2 to Maven Central
 
-The project is **release-ready** but does **not** publish automatically.
+Version **1.0.0** is the first release in-repo.
 
-## Prerequisites
+## Gate rule (CI)
 
-1. Sonatype Central Portal account (https://central.sonatype.com)
-2. Namespace `io.a2` verified
-3. GPG key pair for signing
-4. `~/.m2/settings.xml`:
+Publish runs **only** when:
 
-```xml
-<settings>
-  <servers>
-    <server>
-      <id>central</id>
-      <username>${env.OSSRH_USERNAME}</username>
-      <password>${env.OSSRH_TOKEN}</password>
-    </server>
-  </servers>
-</settings>
-```
+1. Trigger is **workflow_dispatch** on `main`, **and**
+2. All of these jobs **succeed**:
+   - Build & Unit Tests (Java 17 and 21)
+   - Integration Tests (Redis)
+   - Sonar Analysis
+   - Static Analysis (SpotBugs + PMD)
 
-## Publish (manual)
+If any required job fails, **Publish to Maven Central is skipped**.
+
+## Prerequisites (GitHub secrets)
+
+| Secret | Purpose |
+|--------|---------|
+| `OSSRH_USERNAME` | Sonatype Central username |
+| `OSSRH_TOKEN` | Sonatype Central token / password |
+| `GPG_PRIVATE_KEY` | ASCII-armored private key for signing |
+| `GPG_PASSPHRASE` | GPG key passphrase |
+
+Also: namespace `io.a2` claimed at https://central.sonatype.com
+
+## Publish via GitHub Actions
+
+1. Set the secrets above
+2. **Actions → CI → Run workflow** (branch `main`)
+3. After all jobs are green, **Publish to Maven Central** runs `mvn -Prelease deploy`
+4. In Central Portal, review the deployment and **Publish** (`autoPublish=false`)
+
+## Publish locally
 
 ```bash
-# 1. Set version (remove -SNAPSHOT)
-mvn versions:set -DnewVersion=0.1.0
-
-# 2. Build, sign, deploy (does NOT auto-publish to Central)
+export OSSRH_USERNAME=...
+export OSSRH_TOKEN=...
 mvn -Prelease clean deploy -DskipTests
-
-# 3. In Central Portal UI: review & publish the deployment
 ```
-
-The `release` profile attaches sources + javadoc, signs with GPG, and uses
-`central-publishing-maven-plugin` with `autoPublish=false`.
-
-## CI
-
-The publish job in `.github/workflows/ci.yml` is **commented out**.
-Uncomment and wire secrets when you are ready.
