@@ -1,104 +1,86 @@
-# SonarLint & SonarQube integration
+# SonarQube via Maven plugins
 
-A2 ships **both**:
+Analysis is driven entirely from the **parent POM** — no IDE plugins required.
 
-| Layer | Tool | Purpose |
-|-------|------|--------|
-| **IDE** | SonarLint | As-you-type findings (VS Code / IntelliJ) |
-| **CI** | SonarQube / SonarCloud | Server analysis, coverage, Quality Gate |
-| **CI (no token)** | SpotBugs + PMD | Local static analysis when `SONAR_TOKEN` is unset |
+| Plugin | Artifact | Role |
+|--------|----------|------|
+| **SonarQube Scanner** | `org.sonarsource.scanner.maven:sonar-maven-plugin` | Upload analysis to SonarCloud / SonarQube |
+| **JaCoCo** | `org.jacoco:jacoco-maven-plugin` | Coverage agent + XML reports for Sonar |
+| **SpotBugs** | `com.github.spotbugs:spotbugs-maven-plugin` | Offline static analysis (`-Pstatic-analysis`) |
+| **PMD** | `org.apache.maven.plugins:maven-pmd-plugin` | Offline rules + CPD (`-Pstatic-analysis`) |
 
 ---
 
-## 1. SonarQube / SonarCloud (CI)
+## Sonar properties (parent `pom.xml`)
 
-Job: **SonarQube Analysis** in `.github/workflows/ci.yml`
-
-- Runs after unit tests
-- JaCoCo coverage from `mvn verify`
-- `sonar-maven-plugin` upload + Quality Gate wait
-- **Skips analysis** (job still green) when `SONAR_TOKEN` is not set
-
-### Secrets
-
-| Secret | Required | Description |
-|--------|----------|-------------|
-| `SONAR_TOKEN` | To enable analysis | SonarCloud or SonarQube token |
-| `SONAR_HOST_URL` | No | Default `https://sonarcloud.io` |
-
-### Variables (optional)
-
-| Variable | Default |
-|----------|---------|
-| `SONAR_ORGANIZATION` | `futureimadmin` |
-| `SONAR_PROJECT_KEY` | `futureimadmin_A2` |
-
-### Enable SonarCloud
-
-1. https://sonarcloud.io → import `futureimadmin/A2`
-2. Create project key `futureimadmin_A2` (or set variable)
-3. Generate token → GitHub secret `SONAR_TOKEN`
-4. Optional: install [SonarCloud GitHub App](https://github.com/apps/sonarcloud) for PR decoration
-
-### Self-hosted SonarQube
-
-```text
-SONAR_TOKEN=<token>
-SONAR_HOST_URL=https://sonarqube.example.com
+```xml
+<sonar.organization>futureimadmin</sonar.organization>
+<sonar.projectKey>futureimadmin_A2</sonar.projectKey>
+<sonar.projectName>A2</sonar.projectName>
+<sonar.host.url>https://sonarcloud.io</sonar.host.url>
+<sonar.java.source>17</sonar.java.source>
+<sonar.coverage.jacoco.xmlReportPaths>…/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
 ```
 
-### Local Maven analysis
+Override on the command line or with env:
+
+| Property / env | Purpose |
+|----------------|--------|
+| `sonar.token` / `SONAR_TOKEN` | Authentication (required) |
+| `sonar.host.url` / `SONAR_HOST_URL` | Server URL (default SonarCloud) |
+| `sonar.organization` | SonarCloud org |
+| `sonar.projectKey` | Project key |
+
+---
+
+## Commands
+
+### SonarCloud / SonarQube
 
 ```bash
-export SONAR_TOKEN=...
+export SONAR_TOKEN=your_token
+
+# Profile enables qualitygate.wait=true
+mvn -Psonar clean verify sonar:sonar
+
+# Self-hosted SonarQube
 mvn -Psonar clean verify sonar:sonar \
-  -Dsonar.token=$SONAR_TOKEN \
-  -Dsonar.host.url=${SONAR_HOST_URL:-https://sonarcloud.io}
+  -Dsonar.host.url=https://sonarqube.example.com
 ```
 
----
+`verify` runs tests + JaCoCo reports; `sonar:sonar` uploads using POM properties.
 
-## 2. SonarLint (IDE)
-
-Repo already includes VS Code recommendations and connected-mode project key.
-
-### VS Code / Cursor
-
-1. Open the repo — accept recommended extension **SonarLint** (`SonarSource.sonarlint-vscode`)
-2. Command Palette → **SonarLint: Connect to SonarQube or SonarCloud**
-3. Add SonarCloud (or your SQ URL) + token
-4. Bind workspace to project key **`futureimadmin_A2`**
-
-Config files:
-
-- `.vscode/extensions.json` — recommends SonarLint
-- `.vscode/settings.json` — project key for connected mode
-- `.vscode/sonarlint.json` — human-readable binding notes
-
-### IntelliJ IDEA
-
-1. Plugins → install **SonarLint**
-2. Settings → Tools → SonarLint → **Connect to SonarQube / SonarCloud**
-3. Bind module to `futureimadmin_A2`
-
-Connected mode keeps IDE rules aligned with the server Quality Profile used in CI.
-
----
-
-## 3. CI static analysis without a Sonar server
-
-Job **Static Analysis (SpotBugs + PMD)** (`-Pstatic-analysis`):
-
-- No `SONAR_TOKEN` required
-- Uploads XML/HTML reports as artifacts
-- Currently non-blocking (`|| true`) until a clean baseline exists
+### Offline (no Sonar server)
 
 ```bash
 mvn -Pstatic-analysis verify -DskipTests
 ```
 
+Reports under each module `target/` (SpotBugs XML, PMD XML/HTML).
+
 ---
 
-## Quality Gate
+## CI
 
-When `SONAR_TOKEN` is set, CI waits for the gate (`sonar.qualitygate.wait=true`) and fails the Sonar job if the gate fails.
+GitHub Actions job **SonarQube Analysis**:
+
+```bash
+mvn -B -ntp -Psonar clean verify sonar:sonar
+```
+
+Requires repository secret **`SONAR_TOKEN`**. Optional **`SONAR_HOST_URL`** for self-hosted.
+
+Job **Static Analysis (SpotBugs + PMD)** always runs via `-Pstatic-analysis` (no token).
+
+---
+
+## Plugin declaration (summary)
+
+In parent POM `<build><plugins>`:
+
+- `jacoco-maven-plugin` — `prepare-agent` + `report` on `verify`
+- `sonar-maven-plugin` — available as `sonar:sonar` (not bound to a phase)
+
+Profile **`sonar`**: sets `sonar.qualitygate.wait=true`.
+
+Profile **`static-analysis`**: binds SpotBugs + PMD `check` to `verify`.
