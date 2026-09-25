@@ -11,7 +11,7 @@
 
     <artifactId>a2-core</artifactId>
     <name>A2 Core</name>
-    <description>Runtime, interceptor, default TokenService and provider registry</description>
+    <description>Runtime, interceptor, token stores, impersonation</description>
 
     <dependencies>
         <dependency>
