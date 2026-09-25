@@ -7,31 +7,21 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Impersonate another principal for the duration of the method.
- * Useful for admin tools, support desks, or service-to-service calls
- * that need to act "as" a user.
- *
- * <pre>
- * {@literal @}A2Impersonate(principalId = "#userId", durationSeconds = 3600)
- * public void actAsUser(String userId) { ... }
- * </pre>
- *
- * SpEL-style expressions are supported for principalId when used with Spring.
+ * Marks a method that initiates user impersonation.
+ * Requires the caller to hold an "impersonate" permission.
+ * Always audited.
  */
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD})
 public @interface A2Impersonate {
 
-    /** Target principal ID (or SpEL expression). */
-    String principalId();
+    /** Parameter name (or SpEL) that holds the target principal id. */
+    String targetPrincipalParam() default "targetUserId";
 
-    /** How long the impersonation token is valid (seconds). Default 1 hour. */
-    long durationSeconds() default 3600;
+    /** Lifetime of the impersonation token (seconds). */
+    long ttlSeconds() default 3600;
 
-    /** Reason recorded in the audit log. */
-    String reason() default "impersonation";
-
-    /** If true, the caller must hold an explicit "impersonate" permission. */
-    boolean requirePermission() default true;
+    /** Mandatory reason is expected as a method parameter named "reason" or via this attribute. */
+    String reason() default "";
 }
