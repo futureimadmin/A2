@@ -1,5 +1,8 @@
 # A2 — Annotation-driven Identity & Access Management
 
+[![CI](https://github.com/futureimadmin/A2/actions/workflows/ci.yml/badge.svg)](https://github.com/futureimadmin/A2/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 **A2** ("Auth Anywhere") unifies OAuth2, OIDC, SAML, Kerberos, API Keys, JWT and more behind a single annotation model. Issue, rotate, and revoke tokens; enforce AuthN/AuthZ; assume roles and impersonate — without locking into one IdP or protocol.
 
 ```java
@@ -27,8 +30,9 @@ public class OrderService { ... }
 13. [Spring Boot](#spring-boot)
 14. [Quarkus](#quarkus)
 15. [gRPC sidecar (multi-language)](#grpc-sidecar-multi-language)
-16. [Build & publish](#build--publish)
-17. [License](#license)
+16. [Quality — SonarLint & SonarQube](#quality--sonarlint--sonarqube)
+17. [Build & publish](#build--publish)
+18. [License](#license)
 
 ---
 
@@ -268,7 +272,6 @@ Optional: add `org.opensaml:opensaml-saml-impl:5.1.3` for full OpenSAML 5.x. See
 
 ```java
 ApiKeyProtocolProvider apiKeys = new ApiKeyProtocolProvider();
-// Register keys (implementation may load from store / config)
 A2Runtime.get().register(apiKeys);
 ```
 
@@ -279,7 +282,7 @@ A2Runtime.get().register(apiKeys);
 public void handleWebhook(Payload body) { ... }
 ```
 
-Clients send the key via `Authorization: ApiKey <key>` or `X-API-Key: <key>` (provider-specific header support).
+Clients send the key via `Authorization: ApiKey <key>` or `X-API-Key: <key>`.
 
 ### Combined with JWT for public vs machine traffic
 
@@ -298,8 +301,8 @@ public class HybridApi { ... }
 
 ```java
 KerberosProtocolProvider kerberos = new KerberosProtocolProvider(
-    "HTTP/app.example.com@EXAMPLE.COM",  // service principal
-    "/etc/krb5.keytab"                   // keytab path
+    "HTTP/app.example.com@EXAMPLE.COM",
+    "/etc/krb5.keytab"
 );
 A2Runtime.get().register(kerberos);
 ```
@@ -311,61 +314,27 @@ A2Runtime.get().register(kerberos);
 public void intranetOnly() { ... }
 ```
 
-Browser or client sends `Authorization: Negotiate <spnego-token>`. A2 validates the GSS context and maps the principal name to roles/permissions via your configured mapping.
-
 ---
 
 ## How to use — Assume Role & Impersonation
 
-### Assume role (max TTL 1 hour)
-
 ```java
 @A2AssumeRole(role = "billing-admin", ttlSeconds = 3600)
 public void runBillingJob() { ... }
-```
 
-Programmatic:
-
-```java
-ImpersonationService svc = new DefaultImpersonationService(tokenService, store);
-TokenResult assumed = svc.assumeRole(callerPrincipal, "billing-admin", 3600, "job-42");
-```
-
-Assumed tokens carry audit claims such as `assumed_role` and original principal.
-
-### Impersonation (requires permission + reason)
-
-```java
 @A2Impersonate(requirePermission = "impersonate")
 public void supportAsUser(String targetUserId, String ticketId) { ... }
-```
-
-```java
-TokenResult imp = svc.impersonate(
-    adminPrincipal,      // must have "impersonate" permission
-    "customer-123",
-    1800,
-    "support-ticket-9"   // reason is required
-);
 ```
 
 ---
 
 ## How to use — Service-to-service credentials
 
-Temporary credentials for service-to-service calls are **hard-capped at 1 hour**.
+Temporary credentials are **hard-capped at 1 hour**.
 
 ```java
 @A2ServiceCredential(audience = "orders-service", ttlSeconds = 3600)
 public void callOrdersApi() { ... }
-
-@A2TemporaryCredential(ttlSeconds = 1800)
-public String mintS2SToken() { ... }
-```
-
-```java
-TokenResult s2s = tokenService.issueTemporaryCredential(
-    servicePrincipal, "payments-api", 3600);
 ```
 
 ---
@@ -381,21 +350,6 @@ public TokenResponse refresh(String oldToken) { ... }
 
 @A2Revoke
 public void logout() { ... }
-
-@A2Revoke  // can revoke all for principal when configured
-public void revokeAllSessions(String userId) { ... }
-```
-
-Programmatic:
-
-```java
-provider.issueToken(request);
-provider.rotateToken(request);   // revokes previous when store is configured
-provider.revokeToken(RevokeRequest.builder()
-    .tokenId(jti)
-    .allForPrincipal(true)
-    .principalId("alice")
-    .build());
 ```
 
 ---
@@ -411,7 +365,7 @@ TokenStore store = TokenStoreFactory.create("redis", Map.of("redisCommands", cmd
 | `memory` | — |
 | `jdbc` | `dataSource` |
 | `redis` / `valkey` | `redisCommands` |
-| `vault` / `tmvault` / `openbao` | `vaultClient`, optional `mountPath` |
+| `vault` / `tmvault` / `openbao` | `vaultClient` |
 | `gcp-secretmanager` | `gcpSecretClient` |
 | `aws-secretsmanager` | `awsSecretsClient` |
 | `azure-keyvault` | `azureKeyVaultClient` |
@@ -430,17 +384,6 @@ Details: [docs/TOKEN_STORES.md](docs/TOKEN_STORES.md).
 </dependency>
 ```
 
-```yaml
-# application.yml
-a2:
-  jwt:
-    secret: ${A2_JWT_SECRET}
-    issuer: https://api.example.com
-  token-store: redis   # or memory, jdbc, vault, ...
-```
-
-Annotations work on `@RestController` / `@Service` methods via AOP.
-
 ---
 
 ## Quarkus
@@ -453,13 +396,38 @@ Annotations work on `@RestController` / `@Service` methods via AOP.
 </dependency>
 ```
 
-CDI interceptor binds `@A2Protected` and related annotations. Native image configs are included under `META-INF/native-image/io.a2/` — see [docs/NATIVE_IMAGE.md](docs/NATIVE_IMAGE.md).
+See [docs/NATIVE_IMAGE.md](docs/NATIVE_IMAGE.md).
 
 ---
 
 ## gRPC sidecar (multi-language)
 
-Run the `a2-sidecar` process next to non-Java services. Call AuthN/AuthZ/token APIs over gRPC from Go, Python, Node, etc. Same providers and token stores as the Java runtime.
+Run `a2-sidecar` next to non-Java services; call AuthN/AuthZ/token APIs over gRPC.
+
+---
+
+## Quality — SonarLint & SonarQube
+
+Both are supported:
+
+| | **SonarLint** (IDE) | **SonarQube / SonarCloud** (CI) |
+|--|---------------------|--------------------------------|
+| When | As you type | Every push / PR |
+| Setup | VS Code / IntelliJ extension | Secret `SONAR_TOKEN` |
+| Repo config | `.vscode/settings.json`, `extensions.json` | Job `SonarQube Analysis` |
+
+Without a Sonar token, CI still runs **SpotBugs + PMD** (`static-analysis` profile).
+
+Full guide: **[docs/SONAR.md](docs/SONAR.md)**
+
+```bash
+# Local SonarCloud/SQ analysis
+export SONAR_TOKEN=...
+mvn -Psonar clean verify sonar:sonar
+
+# Local SpotBugs + PMD (no server)
+mvn -Pstatic-analysis verify -DskipTests
+```
 
 ---
 
@@ -472,7 +440,7 @@ mvn clean verify
 Maven Central (manual only):
 
 ```bash
-mvn -Prelease clean deploy   # signs + uploads; autoPublish=false
+mvn -Prelease clean deploy
 ```
 
 See [docs/MAVEN_CENTRAL.md](docs/MAVEN_CENTRAL.md). Status: [docs/STATUS.md](docs/STATUS.md).
