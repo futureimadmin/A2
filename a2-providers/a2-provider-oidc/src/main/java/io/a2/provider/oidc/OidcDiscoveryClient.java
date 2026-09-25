@@ -10,6 +10,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -100,8 +101,6 @@ public class OidcDiscoveryClient {
 
     /**
      * Minimal JSON parser sufficient for discovery documents.
-     * Avoids pulling a full JSON library into the core path; production
-     * deployments can replace with Jackson if preferred.
      */
     @SuppressWarnings("unchecked")
     OidcDiscoveryDocument parse(String json, String sourceUri) {
@@ -131,29 +130,25 @@ public class OidcDiscoveryClient {
                 .build();
     }
 
-    // --- minimal JSON helpers (object + string arrays only) ---
-
     private static Map<String, Object> simpleJsonObject(String json) {
         Map<String, Object> result = new HashMap<>();
         String s = json.trim();
         if (!s.startsWith("{") || !s.endsWith("}")) {
             throw new OidcDiscoveryException("Invalid JSON object");
         }
-        // very small state machine for flat discovery docs
         int i = 1;
         int n = s.length() - 1;
         while (i < n) {
             while (i < n && Character.isWhitespace(s.charAt(i))) i++;
             if (i >= n || s.charAt(i) == '}') break;
             if (s.charAt(i) != '"') {
-                // skip unexpected
                 i++;
                 continue;
             }
             int keyStart = ++i;
             while (i < n && s.charAt(i) != '"') i++;
             String key = s.substring(keyStart, i);
-            i++; // skip "
+            i++;
             while (i < n && (Character.isWhitespace(s.charAt(i)) || s.charAt(i) == ':')) i++;
             if (i >= n) break;
 
@@ -162,11 +157,11 @@ public class OidcDiscoveryClient {
             if (c == '"') {
                 int vs = ++i;
                 while (i < n && s.charAt(i) != '"') {
-                    if (s.charAt(i) == '\\') i++; // skip escape
+                    if (s.charAt(i) == '\\') i++;
                     i++;
                 }
                 value = s.substring(vs, i);
-                i++; // closing "
+                i++;
             } else if (c == '[') {
                 List<String> list = new ArrayList<>();
                 i++;
