@@ -6,7 +6,6 @@ import io.a2.spi.AssumeRoleService;
 import io.a2.spi.TokenService;
 import io.a2.spi.TokenStore;
 import io.a2.spi.model.AssumeRoleRequest;
-import io.a2.spi.model.StoredToken;
 import io.a2.spi.model.TokenRequest;
 import io.a2.spi.model.TokenResult;
 
@@ -31,13 +30,12 @@ public class DefaultAssumeRoleService implements AssumeRoleService {
 
     @Override
     public TokenResult assumeRole(AssumeRoleRequest request) {
-        if (request.requireDelegationPermission()) {
-            // In a full system we would check that caller has "sts:AssumeRole" or similar.
-            // Here we record the intent; policy engines can plug in later.
-        }
-
         long ttl = request.durationSeconds() > 0 ? request.durationSeconds() : 3600;
-        Instant exp = Instant.now().plusSeconds(ttl);
+        if (ttl > 3600) {
+            ttl = 3600;
+        }
+        Instant now = Instant.now();
+        Instant exp = now.plusSeconds(ttl);
 
         Map<String, Object> claims = new HashMap<>();
         claims.put("assumed_role", request.role());
@@ -47,7 +45,6 @@ public class DefaultAssumeRoleService implements AssumeRoleService {
             claims.put("policies", String.join(",", request.policies()));
         }
 
-        // The effective principal becomes role@assumed
         String effectivePrincipal = request.role() + "@assumed";
 
         TokenResult issued = tokenService.issue(TokenRequest.builder()
@@ -58,19 +55,21 @@ public class DefaultAssumeRoleService implements AssumeRoleService {
                 .claims(claims)
                 .build());
 
-        if (issued.isSuccess()) {
-            StoredToken stored = StoredToken.builder()
-                    .tokenId(issued.tokenId().orElse(UUID.randomUUID().toString()))
-                    .rawToken(issued.token().orElse(null))
-                    .type(TokenType.ASSUMED_ROLE)
-                    .principalId(effectivePrincipal)
-                    .protocol(Protocol.JWT)
-                    .issuedAt(Instant.now())
-                    .expiresAt(exp)
-                    .claims(claims)
-                    .sessionName(request.sessionName())
-                    .build();
-            tokenStore.save(stored);
+        if (issued.isSuccess() && tokenStore != null) {
+            String id = issued.tokenId().orElse(UUID.randomUUID().toString());
+            tokenStore.save(new TokenStore.TokenRecord(
+                    id,
+                    issued.token().orElse(""),
+                    TokenType.ASSUMED_ROLE,
+                    effectivePrincipal,
+                    null,
+                    now,
+                    exp,
+                    false,
+                    request.role(),
+                    request.callerPrincipalId(),
+                    claims
+            ));
         }
         return issued;
     }
@@ -79,7 +78,11 @@ public class DefaultAssumeRoleService implements AssumeRoleService {
     public TokenResult impersonate(String callerPrincipalId, String targetPrincipalId,
                                    long durationSeconds, String reason) {
         long ttl = durationSeconds > 0 ? durationSeconds : 3600;
-        Instant exp = Instant.now().plusSeconds(ttl);
+        if (ttl > 3600) {
+            ttl = 3600;
+        }
+        Instant now = Instant.now();
+        Instant exp = now.plusSeconds(ttl);
 
         Map<String, Object> claims = new HashMap<>();
         claims.put("impersonator", callerPrincipalId);
@@ -94,18 +97,21 @@ public class DefaultAssumeRoleService implements AssumeRoleService {
                 .claims(claims)
                 .build());
 
-        if (issued.isSuccess()) {
-            StoredToken stored = StoredToken.builder()
-                    .tokenId(issued.tokenId().orElse(UUID.randomUUID().toString()))
-                    .rawToken(issued.token().orElse(null))
-                    .type(TokenType.IMPERSONATION)
-                    .principalId(targetPrincipalId)
-                    .protocol(Protocol.JWT)
-                    .issuedAt(Instant.now())
-                    .expiresAt(exp)
-                    .claims(claims)
-                    .build();
-            tokenStore.save(stored);
+        if (issued.isSuccess() && tokenStore != null) {
+            String id = issued.tokenId().orElse(UUID.randomUUID().toString());
+            tokenStore.save(new TokenStore.TokenRecord(
+                    id,
+                    issued.token().orElse(""),
+                    TokenType.IMPERSONATION,
+                    targetPrincipalId,
+                    null,
+                    now,
+                    exp,
+                    false,
+                    null,
+                    callerPrincipalId,
+                    claims
+            ));
         }
         return issued;
     }
@@ -113,11 +119,12 @@ public class DefaultAssumeRoleService implements AssumeRoleService {
     @Override
     public TokenResult issueTemporaryCredential(String principalId, String audience,
                                                 long durationSeconds, String... scopes) {
-        long ttl = durationSeconds > 0 ? durationSeconds : 3600; // default 1 hour
-        if (ttl > 12 * 3600) {
-            ttl = 12 * 3600; // hard cap 12h
+        long ttl = durationSeconds > 0 ? durationSeconds : 3600;
+        if (ttl > 3600) {
+            ttl = 3600;
         }
-        Instant exp = Instant.now().plusSeconds(ttl);
+        Instant now = Instant.now();
+        Instant exp = now.plusSeconds(ttl);
 
         Map<String, Object> claims = new HashMap<>();
         claims.put("aud", audience != null ? audience : "");
@@ -135,19 +142,21 @@ public class DefaultAssumeRoleService implements AssumeRoleService {
                 .claims(claims)
                 .build());
 
-        if (issued.isSuccess()) {
-            StoredToken stored = StoredToken.builder()
-                    .tokenId(issued.tokenId().orElse(UUID.randomUUID().toString()))
-                    .rawToken(issued.token().orElse(null))
-                    .type(TokenType.TEMPORARY)
-                    .principalId(principalId)
-                    .protocol(Protocol.JWT)
-                    .issuedAt(Instant.now())
-                    .expiresAt(exp)
-                    .claims(claims)
-                    .audience(audience)
-                    .build();
-            tokenStore.save(stored);
+        if (issued.isSuccess() && tokenStore != null) {
+            String id = issued.tokenId().orElse(UUID.randomUUID().toString());
+            tokenStore.save(new TokenStore.TokenRecord(
+                    id,
+                    issued.token().orElse(""),
+                    TokenType.TEMPORARY,
+                    principalId,
+                    null,
+                    now,
+                    exp,
+                    false,
+                    null,
+                    null,
+                    claims
+            ));
         }
         return issued;
     }
