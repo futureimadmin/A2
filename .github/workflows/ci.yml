@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  # workflow_dispatch allows manual runs; default is not to run on schedule
+  workflow_dispatch:
+
+# Do not run on every fork push by default beyond the triggers above.
+# This workflow is ready but will only execute when the events above fire
+# (or when manually triggered).
+
+jobs:
+  build:
+    name: Build & Test (Java ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java: [ 17, 21 ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: temurin
+          cache: maven
+
+      - name: Build
+        run: mvn -B -ntp clean verify -DskipTests=false
+
+      - name: Upload surefire reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-java-${{ matrix.java }}
+          path: "**/target/surefire-reports/**"
+          retention-days: 7
+
+  # Placeholder for future integration tests against Redis/Vault services
+  # integration:
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   services:
+  #     redis:
+  #       image: redis:7
+  #       ports: ["6379:6379"]
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-java@v4
+  #       with:
+  #         java-version: 17
+  #         distribution: temurin
+  #         cache: maven
+  #     - run: mvn -B -ntp -pl a2-core -am test -Dtest=*Redis*
+
+  # Publish job is intentionally NOT triggered automatically.
+  # Uncomment and use workflow_dispatch / release event when ready.
+  # publish:
+  #   if: github.event_name == 'release' && github.event.action == 'published'
+  #   needs: build
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-java@v4
+  #       with:
+  #         java-version: 17
+  #         distribution: temurin
+  #         cache: maven
+  #         server-id: central
+  #         server-username: MAVEN_USERNAME
+  #         server-password: MAVEN_PASSWORD
+  #         gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+  #         gpg-passphrase: MAVEN_GPG_PASSPHRASE
+  #     - name: Publish to Maven Central
+  #       run: mvn -B -ntp -Prelease deploy -DskipTests
+  #       env:
+  #         MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+  #         MAVEN_PASSWORD: ${{ secrets.OSSRH_TOKEN }}
+  #         MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
