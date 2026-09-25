@@ -2,40 +2,29 @@
 
 **A2** ("Auth Anywhere") is an open-source, annotation-first Identity & Access Management framework.
 
-It unifies the fragmented world of **OAuth2, OIDC, SAML, SSO, Kerberos, IAM, API Keys, mTLS/TLS** behind a single, declarative, annotation-based programming model.
-
-> **Goal**: Write security once with annotations. Switch protocols, providers or languages without rewriting business code.
+It unifies **OAuth2, OIDC, SAML, SSO, Kerberos, API Keys, mTLS** behind a single declarative model and adds first-class support for **Assumed Role**, **Impersonation**, and **1-hour Service-to-Service credentials**.
 
 ```java
-@A2Protected(roles = {"admin", "user"}, protocols = {Protocol.OIDC, Protocol.OAUTH2})
-@A2Token(type = TokenType.ACCESS, rotate = true, revokeOnLogout = true)
-public class OrderService {
-    @A2Authorize(permissions = {"order:read", "order:write"})
-    public Order getOrder(String id) { ... }
-}
+@A2Protected(roles = {"admin"}, protocols = {Protocol.OIDC, Protocol.JWT})
+@A2AssumeRole(role = "billing-admin", ttlSeconds = 3600)
+public class OrderService { ... }
 ```
 
-## Why A2?
+## Features
 
-| Problem | A2 Solution |
-|---------|-------------|
-| Too many protocols (OAuth2, SAML, OIDC, Kerberos…) | Single annotation model + pluggable Protocol SPI |
-| Token lifecycle is complex (issue / rotate / revoke) | `@A2Token`, `@A2Rotate`, `@A2Revoke` |
-| AuthN vs AuthZ mixed | Clear separation: `@A2Authenticate` + `@A2Authorize` |
-| Language lock-in | Core is Java; annotation contract + gRPC sidecar for multi-language |
-| Hard to test / mock security | Annotation processor + runtime interceptor + test support |
+| Area | Capability |
+|------|------------|
+| **Protocols** | JWT (Nimbus), OIDC/OAuth2, SAML 2.0 (OpenSAML-ready), Kerberos/SPNEGO (GSS-API), API-Key |
+| **Token lifecycle** | Issue / Rotate / Revoke / Introspect |
+| **Persistence** | `TokenStore` SPI – InMemory + JDBC |
+| **S2S credentials** | `@A2ServiceCredential` – hard-capped at **1 hour** |
+| **Assume Role** | `@A2AssumeRole` + `ImpersonationService.assumeRole` |
+| **Impersonation** | `@A2Impersonate` + audit reason required |
+| **Compile-time** | Annotation processor |
+| **Frameworks** | Spring Boot starter, Quarkus extension |
+| **Multi-language** | gRPC Sidecar |
 
-## Features (v0.1)
-
-- **Annotations** – `@A2Protected`, `@A2Authenticate`, `@A2Authorize`, `@A2Token`, `@A2Rotate`, `@A2Revoke`, `@A2Principal`, `@A2Context`, `@A2Protocol`
-- **Providers** – JWT, API-Key, **OIDC/OAuth2**, **SAML 2.0**, **Kerberos/SPNEGO**
-- **Token lifecycle** – issue / rotate / revoke / introspect
-- **Compile-time checks** – `a2-processor`
-- **Spring Boot starter** – auto-config + AOP interceptor
-- **Quarkus extension** – CDI interceptor + config
-- **gRPC Sidecar** – language-agnostic AuthN/AuthZ/Token API (Go, Python, Node, Rust, …)
-
-## Quick Start (Java)
+## Quick Start
 
 ```xml
 <dependency>
@@ -46,70 +35,66 @@ public class OrderService {
 ```
 
 ```yaml
-# application.yml
 a2:
   providers:
     jwt: true
     oidc: true
   oidc:
     issuer: https://keycloak.example.com/realms/myrealm
-    client-id: my-app
 ```
+
+## Service-to-Service (1 hour credentials)
 
 ```java
-@A2Protected(protocols = Protocol.OIDC)
-@RestController
-public class MyApi {
-    @A2Authorize(roles = "user")
-    @GetMapping("/hello")
-    public String hello(@A2Principal Principal p) {
-        return "Hello " + p.getName();
-    }
-}
+@A2ServiceCredential(audience = "billing-service", scopes = {"billing:write"}, ttlSeconds = 3600)
+public String obtainS2SToken() { ... }
 ```
 
-## Multi-language via Sidecar
+## Assume Role
 
-```bash
-# start the sidecar
-java -jar a2-sidecar.jar --port 50051
+```java
+@A2AssumeRole(role = "billing-admin", ttlSeconds = 3600, sessionName = "order-flow")
+public void chargeCustomer(String orderId) { ... }
 ```
 
-Any language can call the gRPC service defined in `a2-sidecar/src/main/proto/a2.proto`:
+## Impersonation
 
-- `Authenticate`
-- `Authorize`
-- `IssueToken` / `RotateToken` / `RevokeToken`
-- `Introspect`
+```java
+@A2Impersonate(targetPrincipalParam = "customerId", ttlSeconds = 1800)
+public void viewAsCustomer(String customerId, String reason) { ... }
+```
+
+## Persistent Token Store
+
+```java
+TokenStore store = new JdbcTokenStore(dataSource);   // or InMemoryTokenStore
+JwtProtocolProvider jwt = new JwtProtocolProvider(secret, issuer, store);
+runtime.setTokenService(new PersistentTokenService(store));
+```
 
 ## Project Structure
 
 ```
 A2/
-├── a2-annotations/          # Pure annotation definitions (zero deps)
-├── a2-spi/                  # ProtocolProvider, TokenService, models
-├── a2-core/                 # Runtime, interceptor, defaults
-├── a2-processor/            # Compile-time annotation validation
+├── a2-annotations/          # including @A2AssumeRole, @A2Impersonate, @A2ServiceCredential
+├── a2-spi/                  # TokenStore, ImpersonationService
+├── a2-core/                 # PersistentTokenService, DefaultImpersonationService, stores
 ├── a2-providers/
-│   ├── a2-provider-jwt/
-│   ├── a2-provider-apikey/
-│   ├── a2-provider-oidc/    # OIDC + OAuth2
-│   ├── a2-provider-saml/    # SAML 2.0
-│   └── a2-provider-kerberos/# Kerberos / SPNEGO
-├── a2-spring-boot-starter/  # Spring Boot auto-config + AOP
-├── a2-quarkus-extension/    # Quarkus CDI extension
-├── a2-sidecar/              # gRPC sidecar for multi-language
-├── a2-examples/
+│   ├── a2-provider-jwt/     # Nimbus JOSE + JWT
+│   ├── a2-provider-oidc/
+│   ├── a2-provider-saml/    # OpenSAML-ready scaffold
+│   └── a2-provider-kerberos/# Java GSS-API
+├── a2-spring-boot-starter/
+├── a2-quarkus-extension/
+├── a2-sidecar/              # gRPC multi-language
 └── docs/
+    ├── ASSUMED_ROLE_AND_S2S.md
+    └── ...
 ```
 
 ## License
 
 Apache License 2.0
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

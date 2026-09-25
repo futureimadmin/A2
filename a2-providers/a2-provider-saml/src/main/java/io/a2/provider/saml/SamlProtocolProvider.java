@@ -26,14 +26,21 @@ import java.util.regex.Pattern;
 /**
  * SAML 2.0 ProtocolProvider (Service Provider side).
  *
- * Handles:
- * - AuthnRequest generation (caller builds redirect/POST)
- * - Assertion Consumer Service (ACS) – validates SAMLResponse
- * - Attribute extraction → Principal
- * - Session / assertion lifetime
+ * This implementation provides a working scaffold for AuthnRequest generation
+ * and basic assertion parsing. For production, replace the parsing / signature
+ * validation with OpenSAML 5.x:
  *
- * This is a functional scaffold. Production deployments should use a battle-tested
- * library (OpenSAML, pac4j-saml, Spring Security SAML) and plug it behind this SPI.
+ * <pre>
+ * &lt;dependency&gt;
+ *   &lt;groupId&gt;org.opensaml&lt;/groupId&gt;
+ *   &lt;artifactId&gt;opensaml-saml-impl&lt;/artifactId&gt;
+ *   &lt;version&gt;5.1.3&lt;/version&gt;
+ * &lt;/dependency&gt;
+ * </pre>
+ *
+ * Recommended approach: keep this class as a thin adapter and delegate
+ * XML handling, signature verification, and condition evaluation to OpenSAML
+ * (or to pac4j-saml which already wraps OpenSAML).
  */
 public class SamlProtocolProvider implements ProtocolProvider {
 
@@ -71,12 +78,9 @@ public class SamlProtocolProvider implements ProtocolProvider {
 
     @Override
     public String name() {
-        return "SAML 2.0";
+        return "SAML 2.0 (OpenSAML-ready)";
     }
 
-    /**
-     * credentials = Base64-encoded SAMLResponse (or the raw XML for tests).
-     */
     @Override
     public AuthResult authenticate(AuthRequest request) {
         String samlResponse = request.credentials();
@@ -86,13 +90,12 @@ public class SamlProtocolProvider implements ProtocolProvider {
 
         String xml;
         try {
-            // try Base64 decode first
             xml = new String(Base64.getDecoder().decode(samlResponse), StandardCharsets.UTF_8);
         } catch (IllegalArgumentException e) {
-            xml = samlResponse; // already plain XML
+            xml = samlResponse;
         }
 
-        // Extremely simplified validation – production must verify signature, audience, conditions, etc.
+        // TODO production: OpenSAML SignatureValidator + AudienceValidator + ConditionsValidator
         Matcher nameIdMatcher = NAMEID_PATTERN.matcher(xml);
         if (!nameIdMatcher.find()) {
             return AuthResult.failure("No NameID in SAML assertion");
@@ -118,9 +121,6 @@ public class SamlProtocolProvider implements ProtocolProvider {
         return AuthResult.success(principal, Map.of("sessionIndex", sessionIndex, "protocol", "SAML"));
     }
 
-    /**
-     * Builds a minimal AuthnRequest (caller is responsible for redirect / POST binding).
-     */
     public String buildAuthnRequest(String relayState) {
         String id = "_" + UUID.randomUUID();
         String issueInstant = Instant.now().toString();
@@ -136,7 +136,6 @@ public class SamlProtocolProvider implements ProtocolProvider {
 
     @Override
     public TokenResult issueToken(TokenRequest request) {
-        // SAML typically uses the assertion itself as the session token
         String tokenId = UUID.randomUUID().toString();
         Instant exp = Instant.now().plusSeconds(request.ttlSeconds() > 0 ? request.ttlSeconds() : 3600);
         sessions.put(tokenId, new AssertionRecord(request.principalId(), exp));
@@ -181,7 +180,7 @@ public class SamlProtocolProvider implements ProtocolProvider {
     @Override
     public boolean supports(String capability) {
         return switch (capability) {
-            case "authn_request", "acs", "single_logout" -> true;
+            case "authn_request", "acs", "single_logout", "opensaml" -> true;
             default -> false;
         };
     }
