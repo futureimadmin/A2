@@ -65,14 +65,19 @@ jobs:
           distribution: temurin
           cache: maven
 
+      # -pl a2-core -am builds dependencies; -Dtest would otherwise fail on modules
+      # that have no matching test class (Surefire 3.x default).
       - name: Run Redis integration tests
         env:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
-        run: mvn -B -ntp -pl a2-core -am test -Dtest=RedisTokenStoreIntegrationTest
+        run: >-
+          mvn -B -ntp -pl a2-core -am test
+          -Dtest=RedisTokenStoreIntegrationTest
+          -Dsurefire.failIfNoSpecifiedTests=false
 
-  # Publish is manual only — not triggered by push/PR
-  # Activate via workflow_dispatch when ready to release
+  # Publish is manual only — not triggered by push/PR.
+  # Activate via workflow_dispatch on main when ready to release.
   publish:
     name: Publish to Maven Central
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
