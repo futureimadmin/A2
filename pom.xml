@@ -73,15 +73,11 @@
         <pmd.version>3.25.0</pmd.version>
 
         <!--
-          Default target: SonarCloud (org FutureIM).
-          Override for self-hosted SonarQube:
-            -Dsonar.host.url=https://sonarqube.example.com
-            (organization is ignored on self-hosted SQ)
-          Override keys if your SonarCloud UI shows different values:
-            -Dsonar.organization=... -Dsonar.projectKey=...
+          SonarCloud org: display name "FutureIM", key futureimadmin
+          Project key: futureimadmin_A2 (create project in UI if analysis cannot provision it)
         -->
-        <sonar.organization>FutureIM</sonar.organization>
-        <sonar.projectKey>FutureIM_A2</sonar.projectKey>
+        <sonar.organization>futureimadmin</sonar.organization>
+        <sonar.projectKey>futureimadmin_A2</sonar.projectKey>
         <sonar.projectName>A2</sonar.projectName>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.java.source>${java.version}</sonar.java.source>
@@ -300,7 +296,6 @@
             </build>
         </profile>
 
-        <!-- SonarCloud (default host in properties) -->
         <profile>
             <id>sonar</id>
             <properties>
@@ -316,19 +311,10 @@
             </build>
         </profile>
 
-        <!--
-          Self-hosted SonarQube Server (not SonarCloud).
-          Usage:
-            export SONAR_TOKEN=...
-            mvn -Psonarqube clean verify sonar:sonar \
-              -Dsonar.host.url=https://sonarqube.yourcompany.com
-          sonar.organization is not used on SonarQube Server.
-        -->
         <profile>
             <id>sonarqube</id>
             <properties>
                 <sonar.qualitygate.wait>true</sonar.qualitygate.wait>
-                <!-- host must be overridden; placeholder fails fast if forgotten -->
                 <sonar.host.url>http://localhost:9000</sonar.host.url>
             </properties>
             <build>

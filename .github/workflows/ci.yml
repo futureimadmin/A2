@@ -74,9 +74,6 @@ jobs:
           -Dtest=RedisTokenStoreIntegrationTest
           -Dsurefire.failIfNoSpecifiedTests=false
 
-  # SonarCloud (default) or self-hosted SonarQube via SONAR_HOST_URL secret.
-  # Secrets: SONAR_TOKEN (required). Optional: SONAR_HOST_URL.
-  # Optional repo variables: SONAR_ORGANIZATION, SONAR_PROJECT_KEY (override POM).
   sonar:
     name: Sonar Analysis (Cloud or Server)
     runs-on: ubuntu-latest
@@ -121,23 +118,21 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Host: secret overrides POM; empty secret → SonarCloud
           HOST_URL="${{ secrets.SONAR_HOST_URL }}"
           if [ -z "$HOST_URL" ]; then
             HOST_URL="https://sonarcloud.io"
           fi
 
-          # Optional repo variables override POM keys (exact match to SonarCloud UI)
+          # Defaults match SonarCloud org key futureimadmin (display: FutureIM)
           ORG="${{ vars.SONAR_ORGANIZATION }}"
           KEY="${{ vars.SONAR_PROJECT_KEY }}"
-          if [ -z "$ORG" ]; then ORG="FutureIM"; fi
-          if [ -z "$KEY" ]; then KEY="FutureIM_A2"; fi
+          if [ -z "$ORG" ]; then ORG="futureimadmin"; fi
+          if [ -z "$KEY" ]; then KEY="futureimadmin_A2"; fi
 
           echo "sonar.host.url=$HOST_URL"
           echo "sonar.organization=$ORG"
           echo "sonar.projectKey=$KEY"
 
-          # SonarCloud needs organization; self-hosted SonarQube ignores it
           mvn -B -ntp -Psonar clean verify sonar:sonar \
             -Dsonar.host.url="$HOST_URL" \
             -Dsonar.organization="$ORG" \
