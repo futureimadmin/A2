@@ -1,0 +1,11 @@
+{
+  "sonarlint.rules": {
+    "java:S106": { "level": "on" },
+    "java:S1192": { "level": "on" }
+  },
+  "sonarlint.connectedMode.project": {
+    "projectKey": "futureimadmin_A2"
+  },
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "java.compile.nullAnalysis.mode": "automatic"
+}

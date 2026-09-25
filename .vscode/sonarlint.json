@@ -1,0 +1,6 @@
+{
+  "projectKey": "futureimadmin_A2",
+  "organization": "futureimadmin",
+  "serverUrl": "https://sonarcloud.io",
+  "notes": "Connect SonarLint via Command Palette → SonarLint: Connect to SonarQube or SonarCloud, then bind this folder to projectKey futureimadmin_A2"
+}

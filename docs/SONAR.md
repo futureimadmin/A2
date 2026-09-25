@@ -1,109 +1,104 @@
 # SonarLint & SonarQube integration
 
-A2 uses **SonarQube / SonarCloud** in CI for server-side analysis and quality gates.
-**SonarLint** is the IDE companion that uses the same rules locally.
+A2 ships **both**:
 
----
-
-## Architecture
-
-| Layer | Tool | Where |
+| Layer | Tool | Purpose |
 |-------|------|--------|
-| IDE (as-you-type) | **SonarLint** | IntelliJ / VS Code / Eclipse |
-| CI (PR + main) | **SonarQube Scanner** (Maven) | GitHub Actions `sonar` job |
-| Server / SaaS | **SonarCloud** (default) or self-hosted **SonarQube** | Dashboard + Quality Gate |
+| **IDE** | SonarLint | As-you-type findings (VS Code / IntelliJ) |
+| **CI** | SonarQube / SonarCloud | Server analysis, coverage, Quality Gate |
+| **CI (no token)** | SpotBugs + PMD | Local static analysis when `SONAR_TOKEN` is unset |
 
 ---
 
-## CI/CD (already wired)
+## 1. SonarQube / SonarCloud (CI)
 
-Job **SonarQube Analysis** in `.github/workflows/ci.yml`:
+Job: **SonarQube Analysis** in `.github/workflows/ci.yml`
 
-1. Runs after **Build & Unit Tests**
-2. Generates JaCoCo coverage
-3. Runs `sonar-maven-plugin`
-4. Waits for Quality Gate (`sonar.qualitygate.wait=true`)
-5. **Skips** when secret `SONAR_TOKEN` is not set (forks / local clones stay green)
+- Runs after unit tests
+- JaCoCo coverage from `mvn verify`
+- `sonar-maven-plugin` upload + Quality Gate wait
+- **Skips analysis** (job still green) when `SONAR_TOKEN` is not set
 
-### Required GitHub secret
+### Secrets
 
 | Secret | Required | Description |
 |--------|----------|-------------|
-| `SONAR_TOKEN` | Yes (to enable job) | SonarCloud or SonarQube user/project token |
-| `SONAR_HOST_URL` | No | Defaults to `https://sonarcloud.io`. Set for self-hosted SQ, e.g. `https://sonarqube.example.com` |
+| `SONAR_TOKEN` | To enable analysis | SonarCloud or SonarQube token |
+| `SONAR_HOST_URL` | No | Default `https://sonarcloud.io` |
 
-### Optional GitHub variables
+### Variables (optional)
 
 | Variable | Default |
 |----------|---------|
 | `SONAR_ORGANIZATION` | `futureimadmin` |
 | `SONAR_PROJECT_KEY` | `futureimadmin_A2` |
 
-### Enable on SonarCloud
+### Enable SonarCloud
 
-1. https://sonarcloud.io → import GitHub org/repo `futureimadmin/A2`
-2. Create a project (key should match `futureimadmin_A2` or update the variable)
-3. Generate a token → add as repo secret `SONAR_TOKEN`
-4. (Optional) Install [SonarCloud GitHub App](https://github.com/apps/sonarcloud) for PR decoration
+1. https://sonarcloud.io → import `futureimadmin/A2`
+2. Create project key `futureimadmin_A2` (or set variable)
+3. Generate token → GitHub secret `SONAR_TOKEN`
+4. Optional: install [SonarCloud GitHub App](https://github.com/apps/sonarcloud) for PR decoration
 
 ### Self-hosted SonarQube
 
+```text
+SONAR_TOKEN=<token>
+SONAR_HOST_URL=https://sonarqube.example.com
 ```
-SONAR_TOKEN=<sq-token>
-SONAR_HOST_URL=https://sonarqube.yourcompany.com
-```
 
-For self-hosted, `sonar.organization` is ignored; set project key via variable `SONAR_PROJECT_KEY`.
-
----
-
-## Local analysis
+### Local Maven analysis
 
 ```bash
-export SONAR_TOKEN=your_token
-# optional for self-hosted:
-# export SONAR_HOST_URL=https://sonarqube.example.com
-
+export SONAR_TOKEN=...
 mvn -Psonar clean verify sonar:sonar \
   -Dsonar.token=$SONAR_TOKEN \
   -Dsonar.host.url=${SONAR_HOST_URL:-https://sonarcloud.io}
 ```
 
-Coverage reports are produced under each module’s `target/site/jacoco/`.
-
 ---
 
-## SonarLint (IDE)
+## 2. SonarLint (IDE)
 
-SonarLint does **not** run in CI; it mirrors Sonar rules in the editor.
+Repo already includes VS Code recommendations and connected-mode project key.
+
+### VS Code / Cursor
+
+1. Open the repo — accept recommended extension **SonarLint** (`SonarSource.sonarlint-vscode`)
+2. Command Palette → **SonarLint: Connect to SonarQube or SonarCloud**
+3. Add SonarCloud (or your SQ URL) + token
+4. Bind workspace to project key **`futureimadmin_A2`**
+
+Config files:
+
+- `.vscode/extensions.json` — recommends SonarLint
+- `.vscode/settings.json` — project key for connected mode
+- `.vscode/sonarlint.json` — human-readable binding notes
 
 ### IntelliJ IDEA
 
-1. Settings → Plugins → install **SonarLint**
+1. Plugins → install **SonarLint**
 2. Settings → Tools → SonarLint → **Connect to SonarQube / SonarCloud**
-3. Add connection (SonarCloud token or SonarQube URL + token)
-4. Bind project to `futureimadmin_A2` (or your project key)
+3. Bind module to `futureimadmin_A2`
 
-### VS Code
+Connected mode keeps IDE rules aligned with the server Quality Profile used in CI.
 
-1. Install extension **SonarLint** (`SonarSource.sonarlint-vscode`)
-2. Command Palette → **SonarLint: Connect to SonarQube or SonarCloud**
-3. Bind workspace folder to the same project key used in CI
+---
 
-Connected mode keeps IDE findings aligned with the server Quality Profile.
+## 3. CI static analysis without a Sonar server
+
+Job **Static Analysis (SpotBugs + PMD)** (`-Pstatic-analysis`):
+
+- No `SONAR_TOKEN` required
+- Uploads XML/HTML reports as artifacts
+- Currently non-blocking (`|| true`) until a clean baseline exists
+
+```bash
+mvn -Pstatic-analysis verify -DskipTests
+```
 
 ---
 
 ## Quality Gate
 
-CI fails the `sonar` job if the Quality Gate fails (`sonar.qualitygate.wait=true`).
-Tune the gate in SonarCloud/SonarQube (coverage on new code, duplications, ratings).
-
----
-
-## Maven coordinates
-
-- `org.jacoco:jacoco-maven-plugin` — coverage agent + XML reports
-- `org.sonarsource.scanner.maven:sonar-maven-plugin` — analysis upload
-
-Profile `-Psonar` binds the scanner plugin for local runs.
+When `SONAR_TOKEN` is set, CI waits for the gate (`sonar.qualitygate.wait=true`) and fails the Sonar job if the gate fails.
