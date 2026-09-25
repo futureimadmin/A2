@@ -74,7 +74,7 @@ jobs:
           -Dtest=RedisTokenStoreIntegrationTest
           -Dsurefire.failIfNoSpecifiedTests=false
 
-  # SonarCloud project futureimadmin_A2 — default branch on GitHub is main (not master).
+  # SonarCloud long-lived branch is "master" (mapped to GitHub main).
   sonar:
     name: Sonar Analysis (Cloud or Server)
     runs-on: ubuntu-latest
@@ -85,7 +85,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Full history for SCM blame / new code
           fetch-depth: 0
 
       - name: Set up JDK 17
@@ -130,25 +129,25 @@ jobs:
           if [ -z "$ORG" ]; then ORG="futureimadmin"; fi
           if [ -z "$KEY" ]; then KEY="futureimadmin_A2"; fi
 
-          BRANCH="${{ github.ref_name }}"
-          # On PR, analyze as pull request decoration instead of a long-lived branch
+          GH_BRANCH="${{ github.ref_name }}"
           EXTRA_BRANCH=""
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             EXTRA_BRANCH="-Dsonar.pullrequest.key=${{ github.event.pull_request.number }} \
               -Dsonar.pullrequest.branch=${{ github.head_ref }} \
               -Dsonar.pullrequest.base=${{ github.base_ref }}"
           else
-            # Repo default branch is main — avoids SonarCloud looking for master
-            EXTRA_BRANCH="-Dsonar.branch.name=$BRANCH"
+            # SonarCloud main branch name is "master", bound to GitHub "main"
+            if [ "$GH_BRANCH" = "main" ]; then
+              SONAR_BRANCH="master"
+            else
+              SONAR_BRANCH="$GH_BRANCH"
+            fi
+            EXTRA_BRANCH="-Dsonar.branch.name=$SONAR_BRANCH"
           fi
 
-          echo "sonar.host.url=$HOST_URL"
-          echo "sonar.organization=$ORG"
-          echo "sonar.projectKey=$KEY"
-          echo "branch/PR params: $EXTRA_BRANCH"
+          echo "GitHub branch=$GH_BRANCH → Sonar branch params: $EXTRA_BRANCH"
+          echo "sonar.organization=$ORG sonar.projectKey=$KEY"
 
-          # qualitygate.wait=false: analysis upload already succeeds; QG API can 403
-          # with some tokens. Re-enable after token has Browse permission on the project.
           mvn -B -ntp -Psonar clean verify sonar:sonar \
             -Dsonar.host.url="$HOST_URL" \
             -Dsonar.organization="$ORG" \
