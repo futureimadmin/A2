@@ -67,21 +67,14 @@
         <protobuf.version>3.25.3</protobuf.version>
         <nimbus.version>9.40</nimbus.version>
 
-        <!-- Analysis plugin versions -->
         <jacoco.version>0.8.12</jacoco.version>
         <sonar-maven-plugin.version>5.0.0.4389</sonar-maven-plugin.version>
         <spotbugs.version>4.8.5.0</spotbugs.version>
         <pmd.version>3.25.0</pmd.version>
 
-        <!--
-          SonarQube / SonarCloud (org.sonarsource.scanner.maven:sonar-maven-plugin)
-          Override any of these with -D or env:
-            SONAR_TOKEN, SONAR_HOST_URL, SONAR_ORGANIZATION
-          Local:  mvn -Psonar verify sonar:sonar
-          CI:     same + -Dsonar.qualitygate.wait=true
-        -->
+        <!-- SonarCloud: organization + project key both futureimadmin -->
         <sonar.organization>futureimadmin</sonar.organization>
-        <sonar.projectKey>futureimadmin_A2</sonar.projectKey>
+        <sonar.projectKey>futureimadmin</sonar.projectKey>
         <sonar.projectName>A2</sonar.projectName>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.java.source>${java.version}</sonar.java.source>
@@ -197,29 +190,16 @@
                     <artifactId>central-publishing-maven-plugin</artifactId>
                     <version>0.5.0</version>
                 </plugin>
-
-                <!-- JaCoCo: coverage agent + XML reports for Sonar -->
                 <plugin>
                     <groupId>org.jacoco</groupId>
                     <artifactId>jacoco-maven-plugin</artifactId>
                     <version>${jacoco.version}</version>
                 </plugin>
-
-                <!--
-                  Official SonarQube Scanner for Maven.
-                  Does not run on a lifecycle phase by default — invoke:
-                    mvn verify sonar:sonar
-                  or with profile:
-                    mvn -Psonar verify sonar:sonar
-                  Token: -Dsonar.token=... or env SONAR_TOKEN
-                  Host:  -Dsonar.host.url=... or property / env SONAR_HOST_URL
-                -->
                 <plugin>
                     <groupId>org.sonarsource.scanner.maven</groupId>
                     <artifactId>sonar-maven-plugin</artifactId>
                     <version>${sonar-maven-plugin.version}</version>
                 </plugin>
-
                 <plugin>
                     <groupId>com.github.spotbugs</groupId>
                     <artifactId>spotbugs-maven-plugin</artifactId>
@@ -238,8 +218,6 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
             </plugin>
-
-            <!-- Always collect coverage on verify (feeds Sonar when sonar:sonar runs) -->
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
@@ -259,8 +237,6 @@
                     </execution>
                 </executions>
             </plugin>
-
-            <!-- Declared so `mvn sonar:sonar` resolves without -P; config via properties above -->
             <plugin>
                 <groupId>org.sonarsource.scanner.maven</groupId>
                 <artifactId>sonar-maven-plugin</artifactId>
@@ -321,15 +297,6 @@
             </build>
         </profile>
 
-        <!--
-          Sonar analysis profile (optional convenience flags).
-          Usage:
-            export SONAR_TOKEN=...
-            mvn -Psonar clean verify sonar:sonar
-
-          Self-hosted:
-            mvn -Psonar clean verify sonar:sonar -Dsonar.host.url=https://sonarqube.example.com
-        -->
         <profile>
             <id>sonar</id>
             <properties>
@@ -345,7 +312,6 @@
             </build>
         </profile>
 
-        <!-- Offline static analysis (no Sonar server): SpotBugs + PMD -->
         <profile>
             <id>static-analysis</id>
             <build>
