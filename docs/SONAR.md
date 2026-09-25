@@ -1,86 +1,109 @@
-# SonarQube via Maven plugins
+# SonarCloud + SonarQube (Maven)
 
-Analysis is driven entirely from the **parent POM** — no IDE plugins required.
+A2 supports **both**:
 
-| Plugin | Artifact | Role |
-|--------|----------|------|
-| **SonarQube Scanner** | `org.sonarsource.scanner.maven:sonar-maven-plugin` | Upload analysis to SonarCloud / SonarQube |
-| **JaCoCo** | `org.jacoco:jacoco-maven-plugin` | Coverage agent + XML reports for Sonar |
-| **SpotBugs** | `com.github.spotbugs:spotbugs-maven-plugin` | Offline static analysis (`-Pstatic-analysis`) |
-| **PMD** | `org.apache.maven.plugins:maven-pmd-plugin` | Offline rules + CPD (`-Pstatic-analysis`) |
+| Target | Profile | Host |
+|--------|---------|------|
+| **SonarCloud** (SaaS) | `-Psonar` | `https://sonarcloud.io` (default) |
+| **SonarQube Server** (self-hosted) | `-Psonarqube` | Your URL, e.g. `https://sonarqube.company.com` |
 
----
-
-## Sonar properties (parent `pom.xml`)
-
-```xml
-<sonar.organization>futureimadmin</sonar.organization>
-<sonar.projectKey>futureimadmin_A2</sonar.projectKey>
-<sonar.projectName>A2</sonar.projectName>
-<sonar.host.url>https://sonarcloud.io</sonar.host.url>
-<sonar.java.source>17</sonar.java.source>
-<sonar.coverage.jacoco.xmlReportPaths>…/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
-```
-
-Override on the command line or with env:
-
-| Property / env | Purpose |
-|----------------|--------|
-| `sonar.token` / `SONAR_TOKEN` | Authentication (required) |
-| `sonar.host.url` / `SONAR_HOST_URL` | Server URL (default SonarCloud) |
-| `sonar.organization` | SonarCloud org |
-| `sonar.projectKey` | Project key |
+Same plugin: `org.sonarsource.scanner.maven:sonar-maven-plugin` + JaCoCo.
 
 ---
 
-## Commands
+## Current SonarCloud defaults (parent POM)
 
-### SonarCloud / SonarQube
+| Property | Value |
+|----------|--------|
+| `sonar.organization` | **`FutureIM`** |
+| `sonar.projectKey` | **`FutureIM_A2`** |
+| `sonar.projectName` | `A2` |
+| `sonar.host.url` | `https://sonarcloud.io` |
+
+**Important:** In SonarCloud, open your org URL. The path segment is the **organization key** (case-sensitive). Display name can be "FutureIM" while the key might be `futureim` or `FutureIM`. Use the **key from the URL**, not only the display name.
+
+Same for project key: **Project Information** (or the project URL) shows the exact `projectKey`.
+
+If yours differ, either change the POM or set GitHub **Actions variables**:
+
+| Variable | Purpose |
+|----------|--------|
+| `SONAR_ORGANIZATION` | Override org key |
+| `SONAR_PROJECT_KEY` | Override project key |
+
+---
+
+## Fix "Not authorized or project not found"
+
+1. Token was created while logged into the account that **owns/has access to org FutureIM**.
+2. Project **exists** under that org (or first analysis is allowed to create it — token needs **Execute Analysis** / admin).
+3. Keys match the UI exactly:
+   - Org: `https://sonarcloud.io/organizations/<KEY>`
+   - Project key from project settings
+4. Token type is a **user token** (My Account → Security), not a random string.
+
+Create project if missing:
+
+1. https://sonarcloud.io → org **FutureIM**
+2. **Analyze new project** → pick GitHub repo `futureimadmin/A2`
+3. Note the generated **project key** → set POM or `SONAR_PROJECT_KEY` to match
+
+---
+
+## SonarCloud (CI + local)
 
 ```bash
-export SONAR_TOKEN=your_token
-
-# Profile enables qualitygate.wait=true
+export SONAR_TOKEN=...
 mvn -Psonar clean verify sonar:sonar
-
-# Self-hosted SonarQube
-mvn -Psonar clean verify sonar:sonar \
-  -Dsonar.host.url=https://sonarqube.example.com
 ```
 
-`verify` runs tests + JaCoCo reports; `sonar:sonar` uploads using POM properties.
+CI (with repo secret `SONAR_TOKEN`):
 
-### Offline (no Sonar server)
+```text
+mvn -Psonar clean verify sonar:sonar
+  -Dsonar.host.url=https://sonarcloud.io
+  -Dsonar.organization=FutureIM
+  -Dsonar.projectKey=FutureIM_A2
+  -Dsonar.token=...
+```
+
+Do **not** set an empty `SONAR_HOST_URL` secret.
+
+---
+
+## Self-hosted SonarQube Server
+
+```bash
+export SONAR_TOKEN=sqp_...   # or user token from your SQ instance
+mvn -Psonarqube clean verify sonar:sonar \
+  -Dsonar.host.url=https://sonarqube.example.com \
+  -Dsonar.projectKey=A2
+```
+
+On SonarQube Server, **`sonar.organization` is not used**.
+
+### CI against self-hosted SQ
+
+1. Secret `SONAR_TOKEN` = token from your SonarQube
+2. Secret `SONAR_HOST_URL` = `https://sonarqube.example.com`
+3. Optional variable `SONAR_PROJECT_KEY` = project key on that server
+4. Same CI job runs; host is no longer SonarCloud
+
+---
+
+## GitHub secrets / variables summary
+
+| Name | Type | Required |
+|------|------|----------|
+| `SONAR_TOKEN` | Secret | Yes (to run analysis) |
+| `SONAR_HOST_URL` | Secret | No (default SonarCloud); set for self-hosted SQ |
+| `SONAR_ORGANIZATION` | Variable | No (default `FutureIM`) |
+| `SONAR_PROJECT_KEY` | Variable | No (default `FutureIM_A2`) |
+
+---
+
+## Offline static analysis (no Sonar server)
 
 ```bash
 mvn -Pstatic-analysis verify -DskipTests
 ```
-
-Reports under each module `target/` (SpotBugs XML, PMD XML/HTML).
-
----
-
-## CI
-
-GitHub Actions job **SonarQube Analysis**:
-
-```bash
-mvn -B -ntp -Psonar clean verify sonar:sonar
-```
-
-Requires repository secret **`SONAR_TOKEN`**. Optional **`SONAR_HOST_URL`** for self-hosted.
-
-Job **Static Analysis (SpotBugs + PMD)** always runs via `-Pstatic-analysis` (no token).
-
----
-
-## Plugin declaration (summary)
-
-In parent POM `<build><plugins>`:
-
-- `jacoco-maven-plugin` — `prepare-agent` + `report` on `verify`
-- `sonar-maven-plugin` — available as `sonar:sonar` (not bound to a phase)
-
-Profile **`sonar`**: sets `sonar.qualitygate.wait=true`.
-
-Profile **`static-analysis`**: binds SpotBugs + PMD `check` to `verify`.

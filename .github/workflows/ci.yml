@@ -74,11 +74,11 @@ jobs:
           -Dtest=RedisTokenStoreIntegrationTest
           -Dsurefire.failIfNoSpecifiedTests=false
 
-  # sonar-maven-plugin from parent POM.
-  # Requires repository secret SONAR_TOKEN.
-  # Optional secret SONAR_HOST_URL (defaults to https://sonarcloud.io).
+  # SonarCloud (default) or self-hosted SonarQube via SONAR_HOST_URL secret.
+  # Secrets: SONAR_TOKEN (required). Optional: SONAR_HOST_URL.
+  # Optional repo variables: SONAR_ORGANIZATION, SONAR_PROJECT_KEY (override POM).
   sonar:
-    name: SonarQube Analysis
+    name: Sonar Analysis (Cloud or Server)
     runs-on: ubuntu-latest
     needs: build
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -115,21 +115,33 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Do NOT export empty SONAR_HOST_URL — the scanner treats "" as the
-      # server base URL and fails with: Expected URL scheme 'http' or 'https'
-      - name: Maven verify + sonar:sonar (-Psonar)
+      - name: Maven verify + sonar:sonar
         if: steps.sonar_check.outputs.skip != 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Host: secret overrides POM; empty secret → SonarCloud
           HOST_URL="${{ secrets.SONAR_HOST_URL }}"
           if [ -z "$HOST_URL" ]; then
             HOST_URL="https://sonarcloud.io"
           fi
-          echo "Using sonar.host.url=$HOST_URL"
+
+          # Optional repo variables override POM keys (exact match to SonarCloud UI)
+          ORG="${{ vars.SONAR_ORGANIZATION }}"
+          KEY="${{ vars.SONAR_PROJECT_KEY }}"
+          if [ -z "$ORG" ]; then ORG="FutureIM"; fi
+          if [ -z "$KEY" ]; then KEY="FutureIM_A2"; fi
+
+          echo "sonar.host.url=$HOST_URL"
+          echo "sonar.organization=$ORG"
+          echo "sonar.projectKey=$KEY"
+
+          # SonarCloud needs organization; self-hosted SonarQube ignores it
           mvn -B -ntp -Psonar clean verify sonar:sonar \
             -Dsonar.host.url="$HOST_URL" \
+            -Dsonar.organization="$ORG" \
+            -Dsonar.projectKey="$KEY" \
             -Dsonar.token="$SONAR_TOKEN"
 
   static-analysis:

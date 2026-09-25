@@ -72,9 +72,16 @@
         <spotbugs.version>4.8.5.0</spotbugs.version>
         <pmd.version>3.25.0</pmd.version>
 
-        <!-- SonarCloud: organization + project key both futureimadmin -->
-        <sonar.organization>futureimadmin</sonar.organization>
-        <sonar.projectKey>futureimadmin</sonar.projectKey>
+        <!--
+          Default target: SonarCloud (org FutureIM).
+          Override for self-hosted SonarQube:
+            -Dsonar.host.url=https://sonarqube.example.com
+            (organization is ignored on self-hosted SQ)
+          Override keys if your SonarCloud UI shows different values:
+            -Dsonar.organization=... -Dsonar.projectKey=...
+        -->
+        <sonar.organization>FutureIM</sonar.organization>
+        <sonar.projectKey>FutureIM_A2</sonar.projectKey>
         <sonar.projectName>A2</sonar.projectName>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.java.source>${java.version}</sonar.java.source>
@@ -224,16 +231,12 @@
                 <executions>
                     <execution>
                         <id>prepare-agent</id>
-                        <goals>
-                            <goal>prepare-agent</goal>
-                        </goals>
+                        <goals><goal>prepare-agent</goal></goals>
                     </execution>
                     <execution>
                         <id>report</id>
                         <phase>verify</phase>
-                        <goals>
-                            <goal>report</goal>
-                        </goals>
+                        <goals><goal>report</goal></goals>
                     </execution>
                 </executions>
             </plugin>
@@ -297,10 +300,36 @@
             </build>
         </profile>
 
+        <!-- SonarCloud (default host in properties) -->
         <profile>
             <id>sonar</id>
             <properties>
                 <sonar.qualitygate.wait>true</sonar.qualitygate.wait>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.sonarsource.scanner.maven</groupId>
+                        <artifactId>sonar-maven-plugin</artifactId>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+          Self-hosted SonarQube Server (not SonarCloud).
+          Usage:
+            export SONAR_TOKEN=...
+            mvn -Psonarqube clean verify sonar:sonar \
+              -Dsonar.host.url=https://sonarqube.yourcompany.com
+          sonar.organization is not used on SonarQube Server.
+        -->
+        <profile>
+            <id>sonarqube</id>
+            <properties>
+                <sonar.qualitygate.wait>true</sonar.qualitygate.wait>
+                <!-- host must be overridden; placeholder fails fast if forgotten -->
+                <sonar.host.url>http://localhost:9000</sonar.host.url>
             </properties>
             <build>
                 <plugins>
