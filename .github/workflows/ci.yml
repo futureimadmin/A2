@@ -74,8 +74,9 @@ jobs:
           -Dtest=RedisTokenStoreIntegrationTest
           -Dsurefire.failIfNoSpecifiedTests=false
 
-  # Uses sonar-maven-plugin from parent POM (properties + -Psonar).
-  # Requires secret SONAR_TOKEN. Optional: SONAR_HOST_URL.
+  # sonar-maven-plugin from parent POM.
+  # Requires repository secret SONAR_TOKEN.
+  # Optional secret SONAR_HOST_URL (defaults to https://sonarcloud.io).
   sonar:
     name: SonarQube Analysis
     runs-on: ubuntu-latest
@@ -114,21 +115,23 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Do NOT export empty SONAR_HOST_URL — the scanner treats "" as the
+      # server base URL and fails with: Expected URL scheme 'http' or 'https'
       - name: Maven verify + sonar:sonar (-Psonar)
         if: steps.sonar_check.outputs.skip != 'true'
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Plugin reads sonar.* from pom; host/token from env or -D
-          EXTRA=""
-          if [ -n "$SONAR_HOST_URL" ]; then
-            EXTRA="-Dsonar.host.url=$SONAR_HOST_URL"
+          HOST_URL="${{ secrets.SONAR_HOST_URL }}"
+          if [ -z "$HOST_URL" ]; then
+            HOST_URL="https://sonarcloud.io"
           fi
-          mvn -B -ntp -Psonar clean verify sonar:sonar $EXTRA
+          echo "Using sonar.host.url=$HOST_URL"
+          mvn -B -ntp -Psonar clean verify sonar:sonar \
+            -Dsonar.host.url="$HOST_URL" \
+            -Dsonar.token="$SONAR_TOKEN"
 
-  # SpotBugs + PMD via -Pstatic-analysis (no Sonar server required)
   static-analysis:
     name: Static Analysis (SpotBugs + PMD)
     runs-on: ubuntu-latest
