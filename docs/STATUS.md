@@ -1,11 +1,13 @@
-# A2 Status — What's Done / Pending
+# A2 Status
 
-## Done
+## Complete
 
 - [x] Annotation model + SPI
 - [x] JWT HS256 + RS256 (Nimbus)
 - [x] OIDC Discovery + JWKS validation
+- [x] OIDC Authorization Code + PKCE (S256)
 - [x] SAML assertion validation (issuer, audience, conditions, signature)
+- [x] SAML Single Logout (LogoutRequest / LogoutResponse)
 - [x] Kerberos / GSS-API
 - [x] API-Key provider
 - [x] Token stores: InMemory, JDBC, Redis/Valkey, Vault/TMVault/OpenBao, GCP Secret Manager
@@ -13,14 +15,13 @@
 - [x] Annotation processor
 - [x] Spring Boot starter + Quarkus extension
 - [x] gRPC Sidecar
-- [x] GitHub Actions CI (build matrix Java 17/21) — ready, runs on push/PR
-- [x] Maven Central release profile — ready, not auto-published
-- [x] Unit tests (TokenStore, JWT provider)
+- [x] Unit tests (TokenStore, JWT, SAML, OIDC Discovery/PKCE, Impersonation, Factory)
+- [x] Integration tests (Redis — real service in CI, in-memory fallback locally)
+- [x] GitHub Actions CI: build matrix Java 17/21 + Redis integration job
+- [x] Maven Central release profile (manual workflow_dispatch only)
 
-## Intentionally deferred
+## Optional future enhancements (not blockers)
 
-- [ ] Full OpenSAML 5.x (encrypted assertions, metadata) — JDK XML-DSig is in place
-- [ ] SAML Single Logout binding
-- [ ] OIDC full Auth Code + PKCE browser redirect helper
-- [ ] Redis/Vault Testcontainers integration tests in CI (scaffold commented)
-- [ ] Actual `mvn deploy` to Central (manual when ready)
+- OpenSAML 5.x for encrypted assertions / metadata interchange
+- AWS Secrets Manager / Azure Key Vault token store adapters
+- Native image (GraalVM) config for Quarkus

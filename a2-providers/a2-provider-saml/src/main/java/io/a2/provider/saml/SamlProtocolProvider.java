@@ -23,12 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * SAML 2.0 ProtocolProvider (Service Provider side).
- *
- * Package: {@code io.a2.provider.saml}
- *
- * Performs full assertion validation via {@link SamlAssertionValidator}:
- * Issuer, Audience, Conditions (NotBefore/NotOnOrAfter), NameID, Attributes,
- * and optional XML-DSig verification against the IdP certificate.
+ * Full assertion validation + Single Logout.
  */
 public class SamlProtocolProvider implements ProtocolProvider {
 
@@ -37,9 +32,11 @@ public class SamlProtocolProvider implements ProtocolProvider {
     private final String entityId;
     private final String idpSsoUrl;
     private final String acsUrl;
+    private final String idpSloUrl;
     private final String expectedIdpIssuer;
     private final X509Certificate idpCertificate;
     private final SamlAssertionValidator validator;
+    private final SamlSingleLogout singleLogout;
     private final Map<String, AssertionRecord> sessions = new ConcurrentHashMap<>();
 
     public SamlProtocolProvider() {
@@ -47,26 +44,29 @@ public class SamlProtocolProvider implements ProtocolProvider {
                 System.getProperty("a2.saml.entity-id", "https://sp.example.com"),
                 System.getProperty("a2.saml.idp-sso-url", "https://idp.example.com/sso"),
                 System.getProperty("a2.saml.acs-url", "https://sp.example.com/acs"),
+                System.getProperty("a2.saml.idp-slo-url", "https://idp.example.com/slo"),
                 System.getProperty("a2.saml.idp-issuer", null),
                 null
         );
     }
 
     public SamlProtocolProvider(String entityId, String idpSsoUrl, String acsUrl) {
-        this(entityId, idpSsoUrl, acsUrl, null, null);
+        this(entityId, idpSsoUrl, acsUrl, idpSsoUrl.replace("/sso", "/slo"), null, null);
     }
 
     public SamlProtocolProvider(String entityId, String idpSsoUrl, String acsUrl,
-                                String expectedIdpIssuer, X509Certificate idpCertificate) {
+                                String idpSloUrl, String expectedIdpIssuer,
+                                X509Certificate idpCertificate) {
         this.entityId = entityId;
         this.idpSsoUrl = idpSsoUrl;
         this.acsUrl = acsUrl;
+        this.idpSloUrl = idpSloUrl != null ? idpSloUrl : idpSsoUrl;
         this.expectedIdpIssuer = expectedIdpIssuer;
         this.idpCertificate = idpCertificate;
         this.validator = new SamlAssertionValidator(entityId, expectedIdpIssuer, idpCertificate, 120);
+        this.singleLogout = new SamlSingleLogout(entityId, this.idpSloUrl);
     }
 
-    /** Builder-style factory that also accepts a PEM certificate string. */
     public static SamlProtocolProvider withIdpCertificate(String entityId, String idpSsoUrl,
                                                           String acsUrl, String idpIssuer,
                                                           String idpCertPem) throws Exception {
@@ -74,24 +74,20 @@ public class SamlProtocolProvider implements ProtocolProvider {
         if (idpCertPem != null && !idpCertPem.isBlank()) {
             cert = SamlAssertionValidator.loadCertificateFromPem(idpCertPem);
         }
-        return new SamlProtocolProvider(entityId, idpSsoUrl, acsUrl, idpIssuer, cert);
+        return new SamlProtocolProvider(entityId, idpSsoUrl, acsUrl,
+                idpSsoUrl.replace("/sso", "/slo"), idpIssuer, cert);
     }
 
     @Override
-    public Protocol id() {
-        return Protocol.SAML;
-    }
+    public Protocol id() { return Protocol.SAML; }
 
     @Override
-    public String name() {
-        return "SAML 2.0";
-    }
+    public String name() { return "SAML 2.0"; }
 
     @Override
     public AuthResult authenticate(AuthRequest request) {
         String samlResponse = request.credentials();
         if (samlResponse == null || samlResponse.isBlank()) {
-            // also accept from form-style attribute
             Object form = request.attributes().get("SAMLResponse");
             if (form != null) samlResponse = String.valueOf(form);
         }
@@ -115,40 +111,43 @@ public class SamlProtocolProvider implements ProtocolProvider {
         }
 
         String sessionKey = vr.getSessionIndex() != null
-                ? vr.getSessionIndex()
-                : UUID.randomUUID().toString();
+                ? vr.getSessionIndex() : UUID.randomUUID().toString();
         Instant expiry = vr.getNotOnOrAfter() != null
-                ? vr.getNotOnOrAfter()
-                : Instant.now().plusSeconds(3600);
+                ? vr.getNotOnOrAfter() : Instant.now().plusSeconds(3600);
         sessions.put(sessionKey, new AssertionRecord(vr.getNameId(), expiry));
 
         SimplePrincipal principal = new SimplePrincipal(
                 vr.getNameId(), vr.getNameId(), roles, Set.of(), attrs);
-
-        log.debug("SAML auth success for NameID={} issuer={} sigValid={}",
-                vr.getNameId(), vr.getIssuer(), vr.isSignatureValid());
-
         return AuthResult.success(principal, attrs);
     }
 
-    /**
-     * Build a minimal AuthnRequest (caller handles Redirect/POST binding & signing).
-     */
     public String buildAuthnRequest(String relayState) {
         String id = "_" + UUID.randomUUID();
         String issueInstant = Instant.now().toString();
-        StringBuilder sb = new StringBuilder();
-        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        sb.append("<samlp:AuthnRequest xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" ");
-        sb.append("xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ");
-        sb.append("ID=\"").append(id).append("\" Version=\"2.0\" ");
-        sb.append("IssueInstant=\"").append(issueInstant).append("\" ");
-        sb.append("Destination=\"").append(idpSsoUrl).append("\" ");
-        sb.append("AssertionConsumerServiceURL=\"").append(acsUrl).append("\" ");
-        sb.append("ProtocolBinding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\">");
-        sb.append("<saml:Issuer>").append(entityId).append("</saml:Issuer>");
-        sb.append("</samlp:AuthnRequest>");
-        return sb.toString();
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                + "<samlp:AuthnRequest xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" "
+                + "xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" "
+                + "ID=\"" + id + "\" Version=\"2.0\" IssueInstant=\"" + issueInstant + "\" "
+                + "Destination=\"" + idpSsoUrl + "\" AssertionConsumerServiceURL=\"" + acsUrl + "\" "
+                + "ProtocolBinding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\">"
+                + "<saml:Issuer>" + entityId + "</saml:Issuer>"
+                + "</samlp:AuthnRequest>";
+    }
+
+    /** Initiate Single Logout for the given NameID / session. */
+    public String initiateLogout(String nameId, String sessionIndex) {
+        if (sessionIndex != null) sessions.remove(sessionIndex);
+        sessions.entrySet().removeIf(e -> nameId.equals(e.getValue().nameId));
+        return singleLogout.buildLogoutRequest(nameId, sessionIndex);
+    }
+
+    /** Build LogoutResponse (SP responding to IdP LogoutRequest). */
+    public String buildLogoutResponse(String inResponseTo, boolean success) {
+        return singleLogout.buildLogoutResponse(inResponseTo, success);
+    }
+
+    public SamlSingleLogout getSingleLogout() {
+        return singleLogout;
     }
 
     @Override
@@ -198,7 +197,8 @@ public class SamlProtocolProvider implements ProtocolProvider {
     public boolean supports(String capability) {
         return switch (capability) {
             case "authn_request", "acs", "assertion_validation",
-                 "signature", "audience", "conditions", "single_logout" -> true;
+                 "signature", "audience", "conditions",
+                 "single_logout", "slo" -> true;
             default -> false;
         };
     }
@@ -206,7 +206,6 @@ public class SamlProtocolProvider implements ProtocolProvider {
     private static final class AssertionRecord {
         final String nameId;
         final Instant expiresAt;
-
         AssertionRecord(String nameId, Instant expiresAt) {
             this.nameId = nameId;
             this.expiresAt = expiresAt;
