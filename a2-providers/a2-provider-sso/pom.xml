@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>io.a2</groupId>
+        <artifactId>a2-providers</artifactId>
+        <version>1.0.0</version>
+    </parent>
+    <artifactId>a2-provider-sso</artifactId>
+    <name>A2 SSO Providers (Google, Entra, Okta, Ping, AD, Auth0)</name>
+    <description>Brand-specific SSO on top of OIDC discovery, Kerberos and SAML</description>
+    <dependencies>
+        <dependency>
+            <groupId>io.a2</groupId>
+            <artifactId>a2-spi</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.a2</groupId>
+            <artifactId>a2-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.a2</groupId>
+            <artifactId>a2-annotations</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.a2</groupId>
+            <artifactId>a2-provider-oidc</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>9.40</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

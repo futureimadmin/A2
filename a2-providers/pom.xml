@@ -11,5 +11,6 @@
         <module>a2-provider-oidc</module>
         <module>a2-provider-saml</module>
         <module>a2-provider-kerberos</module>
+        <module>a2-provider-sso</module>
     </modules>
 </project>

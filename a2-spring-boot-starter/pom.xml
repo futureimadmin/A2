@@ -11,6 +11,7 @@
         <dependency><groupId>io.a2</groupId><artifactId>a2-provider-oidc</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>io.a2</groupId><artifactId>a2-provider-saml</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>io.a2</groupId><artifactId>a2-provider-kerberos</artifactId><version>${project.version}</version></dependency>
+        <dependency><groupId>io.a2</groupId><artifactId>a2-provider-sso</artifactId><version>${project.version}</version></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-autoconfigure</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-aop</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-configuration-processor</artifactId><optional>true</optional></dependency>
