@@ -6,11 +6,11 @@ import io.a2.spi.TokenStore;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Google Cloud Secret Manager backed TokenStore.
@@ -53,7 +53,7 @@ public class GcpSecretManagerTokenStore implements TokenStore {
         client.createOrUpdateSecret(prefix + record.tokenId(),
                 payload.getBytes(StandardCharsets.UTF_8));
         valueIndex.put(record.tokenValue(), record.tokenId());
-        principalIndex.computeIfAbsent(record.principalId(), k -> new ArrayList<>())
+        principalIndex.computeIfAbsent(record.principalId(), k -> new CopyOnWriteArrayList<>())
                 .add(record.tokenId());
     }
 
@@ -95,7 +95,7 @@ public class GcpSecretManagerTokenStore implements TokenStore {
 
     @Override
     public void revokeAllForPrincipal(String principalId) {
-        List<String> ids = principalIndex.getOrDefault(principalId, List.of());
+        List<String> ids = List.copyOf(principalIndex.getOrDefault(principalId, List.of()));
         ids.forEach(this::revoke);
     }
 
@@ -104,7 +104,6 @@ public class GcpSecretManagerTokenStore implements TokenStore {
         List<String> secrets = client.listSecrets(prefix);
         int purged = 0;
         for (String name : secrets) {
-            String id = name.startsWith(prefix) ? name.substring(prefix.length()) : name;
             Optional<TokenRecord> r = client.accessSecret(name)
                     .flatMap(b -> deserialize(new String(b, StandardCharsets.UTF_8)));
             if (r.isPresent() && (r.get().expiresAt().isBefore(Instant.now()) || r.get().revoked())) {
@@ -116,7 +115,6 @@ public class GcpSecretManagerTokenStore implements TokenStore {
     }
 
     private static String serialize(TokenRecord r) {
-        // minimal line-oriented format; use JSON in production
         return String.join("|",
                 r.tokenId(),
                 r.tokenValue(),
