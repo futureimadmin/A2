@@ -20,15 +20,19 @@ public class A2SecurityAspect {
     }
 
     @Around("@within(io.a2.annotations.A2Protected) || @annotation(io.a2.annotations.A2Protected) "
-            + "|| @within(io.a2.annotations.A2Authorize) || @annotation(io.a2.annotations.A2Authorize)")
+            + "|| @within(io.a2.annotations.A2Authorize) || @annotation(io.a2.annotations.A2Authorize) "
+            + "|| @within(io.a2.annotations.A2Sso) || @annotation(io.a2.annotations.A2Sso) "
+            + "|| @within(io.a2.annotations.A2OktaSso) || @annotation(io.a2.annotations.A2OktaSso) "
+            + "|| @within(io.a2.annotations.A2GoogleSso) || @annotation(io.a2.annotations.A2GoogleSso) "
+            + "|| @within(io.a2.annotations.A2EntraSso) || @annotation(io.a2.annotations.A2EntraSso) "
+            + "|| @within(io.a2.annotations.A2PingSso) || @annotation(io.a2.annotations.A2PingSso) "
+            + "|| @within(io.a2.annotations.A2Auth0Sso) || @annotation(io.a2.annotations.A2Auth0Sso) "
+            + "|| @within(io.a2.annotations.A2ActiveDirectorySso) || @annotation(io.a2.annotations.A2ActiveDirectorySso)")
     public Object enforce(ProceedingJoinPoint pjp) throws Throwable {
         Method method = ((MethodSignature) pjp.getSignature()).getMethod();
-        Object target = pjp.getTarget();
-        Object[] args = pjp.getArgs();
-
-        interceptor.before(target, method, args);
+        interceptor.before(pjp.getTarget(), method, pjp.getArgs());
         Object result = pjp.proceed();
-        interceptor.afterSuccess(target, method, result);
+        interceptor.afterSuccess(pjp.getTarget(), method, result);
         return result;
     }
 }
