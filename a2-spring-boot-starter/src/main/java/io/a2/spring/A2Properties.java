@@ -2,6 +2,9 @@ package io.a2.spring;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @ConfigurationProperties(prefix = "a2")
 public class A2Properties {
 
@@ -9,6 +12,8 @@ public class A2Properties {
     private Oidc oidc = new Oidc();
     private Saml saml = new Saml();
     private Kerberos kerberos = new Kerberos();
+    private Cors cors = new Cors();
+    private Auth auth = new Auth();
 
     public Providers getProviders() { return providers; }
     public void setProviders(Providers providers) { this.providers = providers; }
@@ -18,6 +23,50 @@ public class A2Properties {
     public void setSaml(Saml saml) { this.saml = saml; }
     public Kerberos getKerberos() { return kerberos; }
     public void setKerberos(Kerberos kerberos) { this.kerberos = kerberos; }
+    public Cors getCors() { return cors; }
+    public void setCors(Cors cors) { this.cors = cors; }
+    public Auth getAuth() { return auth; }
+    public void setAuth(Auth auth) { this.auth = auth; }
+
+    public static class Auth {
+        /** Register the servlet AuthN filter. */
+        private boolean filterEnabled = true;
+        /** Reject request immediately when credentials are present but invalid. */
+        private boolean failOnInvalidCredentials = true;
+
+        public boolean isFilterEnabled() { return filterEnabled; }
+        public void setFilterEnabled(boolean filterEnabled) { this.filterEnabled = filterEnabled; }
+        public boolean isFailOnInvalidCredentials() { return failOnInvalidCredentials; }
+        public void setFailOnInvalidCredentials(boolean failOnInvalidCredentials) {
+            this.failOnInvalidCredentials = failOnInvalidCredentials;
+        }
+    }
+
+    public static class Cors {
+        private boolean enabled = true;
+        private boolean allowCredentials = true;
+        private List<String> allowedOrigins = new ArrayList<>(List.of("*"));
+        private List<String> allowedMethods = new ArrayList<>(
+                List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
+        private List<String> allowedHeaders = new ArrayList<>(List.of("*"));
+        private String pathPattern = "/**";
+        private long maxAgeSeconds = 3600;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public boolean isAllowCredentials() { return allowCredentials; }
+        public void setAllowCredentials(boolean allowCredentials) { this.allowCredentials = allowCredentials; }
+        public List<String> getAllowedOrigins() { return allowedOrigins; }
+        public void setAllowedOrigins(List<String> allowedOrigins) { this.allowedOrigins = allowedOrigins; }
+        public List<String> getAllowedMethods() { return allowedMethods; }
+        public void setAllowedMethods(List<String> allowedMethods) { this.allowedMethods = allowedMethods; }
+        public List<String> getAllowedHeaders() { return allowedHeaders; }
+        public void setAllowedHeaders(List<String> allowedHeaders) { this.allowedHeaders = allowedHeaders; }
+        public String getPathPattern() { return pathPattern; }
+        public void setPathPattern(String pathPattern) { this.pathPattern = pathPattern; }
+        public long getMaxAgeSeconds() { return maxAgeSeconds; }
+        public void setMaxAgeSeconds(long maxAgeSeconds) { this.maxAgeSeconds = maxAgeSeconds; }
+    }
 
     public static class Providers {
         private boolean jwt = true;
