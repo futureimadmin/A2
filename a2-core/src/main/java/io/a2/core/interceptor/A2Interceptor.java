@@ -3,12 +3,12 @@ package io.a2.core.interceptor;
 import io.a2.annotations.A2AssumeRole;
 import io.a2.annotations.A2Authorize;
 import io.a2.annotations.A2Impersonate;
+import io.a2.annotations.A2InstantCredentials;
 import io.a2.annotations.A2Protected;
 import io.a2.annotations.A2Revoke;
 import io.a2.annotations.A2Rotate;
 import io.a2.annotations.A2ServiceCredential;
 import io.a2.annotations.A2Token;
-import io.a2.annotations.Protocol;
 import io.a2.annotations.TokenType;
 import io.a2.core.A2Runtime;
 import io.a2.core.DefaultImpersonationService;
@@ -28,17 +28,19 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-/**
- * Core interceptor that enforces A2 annotations, including
- * AssumeRole, Impersonation and Service Credentials.
- */
+/** Core interceptor: AuthZ, AssumeRole, Impersonation, Service + Instant Credentials. */
 public class A2Interceptor {
 
     private final A2Runtime runtime = A2Runtime.get();
     private ImpersonationService impersonationService;
+    private final InstantCredentialsHandler instantHandler = new InstantCredentialsHandler();
 
     public void setImpersonationService(ImpersonationService svc) {
         this.impersonationService = svc;
+    }
+
+    public void setInstantCredentialsService(io.a2.spi.InstantCredentialsService svc) {
+        this.instantHandler.setService(svc);
     }
 
     private ImpersonationService imp() {
@@ -55,7 +57,8 @@ public class A2Interceptor {
                 && method.getAnnotation(A2Authorize.class) == null
                 && method.getAnnotation(A2AssumeRole.class) == null
                 && method.getAnnotation(A2Impersonate.class) == null
-                && method.getAnnotation(A2ServiceCredential.class) == null) {
+                && method.getAnnotation(A2ServiceCredential.class) == null
+                && method.getAnnotation(A2InstantCredentials.class) == null) {
             return true;
         }
 
@@ -84,7 +87,6 @@ public class A2Interceptor {
             checkAuthorization(ctx, authz);
         }
 
-        // AssumeRole – issue credentials before method body
         A2AssumeRole assume = method.getAnnotation(A2AssumeRole.class);
         if (assume != null) {
             Principal caller = ctx.principal().orElseThrow(
@@ -94,10 +96,8 @@ public class A2Interceptor {
             if (!tr.isSuccess()) {
                 throw new SecurityException("AssumeRole failed: " + tr.error().orElse("unknown"));
             }
-            // make the new token available via context claims for the method
         }
 
-        // Impersonation
         A2Impersonate impAnn = method.getAnnotation(A2Impersonate.class);
         if (impAnn != null) {
             Principal caller = ctx.principal().orElseThrow(
@@ -113,29 +113,23 @@ public class A2Interceptor {
             }
         }
 
+        A2InstantCredentials instantAnn = method.getAnnotation(A2InstantCredentials.class);
+        if (instantAnn != null) {
+            instantHandler.handle(instantAnn, method, args, ctx, runtime);
+        }
+
         return true;
     }
 
     public void afterSuccess(Object target, Method method, Object result) {
         A2Token tokenAnn = method.getAnnotation(A2Token.class);
-        if (tokenAnn != null) {
-            handleToken(tokenAnn);
-        }
-
+        if (tokenAnn != null) handleToken(tokenAnn);
         A2ServiceCredential s2s = method.getAnnotation(A2ServiceCredential.class);
-        if (s2s != null) {
-            handleServiceCredential(s2s);
-        }
-
+        if (s2s != null) handleServiceCredential(s2s);
         A2Rotate rotate = method.getAnnotation(A2Rotate.class);
-        if (rotate != null) {
-            handleRotate(rotate);
-        }
-
+        if (rotate != null) handleRotate(rotate);
         A2Revoke revoke = method.getAnnotation(A2Revoke.class);
-        if (revoke != null) {
-            handleRevoke(revoke);
-        }
+        if (revoke != null) handleRevoke(revoke);
     }
 
     private A2Protected findProtected(Method method, Class<?> clazz) {
@@ -147,41 +141,29 @@ public class A2Interceptor {
     private void checkRolesAndPermissions(SecurityContext ctx, String[] roles,
                                           String[] permissions, boolean requireAll) {
         if (roles.length == 0 && permissions.length == 0) return;
-
         Set<String> requiredRoles = new HashSet<>(Arrays.asList(roles));
         Set<String> requiredPerms = new HashSet<>(Arrays.asList(permissions));
-
         if (requireAll) {
-            if (!ctx.roles().containsAll(requiredRoles)) {
+            if (!ctx.roles().containsAll(requiredRoles))
                 throw new SecurityException("Missing required roles");
-            }
-            if (!ctx.permissions().containsAll(requiredPerms)) {
+            if (!ctx.permissions().containsAll(requiredPerms))
                 throw new SecurityException("Missing required permissions");
-            }
         } else {
-            boolean roleOk = requiredRoles.isEmpty()
-                    || requiredRoles.stream().anyMatch(ctx::hasRole);
-            boolean permOk = requiredPerms.isEmpty()
-                    || requiredPerms.stream().anyMatch(ctx::hasPermission);
-            if (!roleOk && !permOk) {
+            boolean roleOk = requiredRoles.isEmpty() || requiredRoles.stream().anyMatch(ctx::hasRole);
+            boolean permOk = requiredPerms.isEmpty() || requiredPerms.stream().anyMatch(ctx::hasPermission);
+            if (!roleOk && !permOk)
                 throw new SecurityException("Insufficient privileges");
-            }
         }
     }
 
     private void checkAuthorization(SecurityContext ctx, A2Authorize authz) {
         AuthorizationContext ac = new AuthorizationContext(
-                ctx,
-                Set.of(authz.roles()),
-                Set.of(authz.permissions()),
-                authz.requireAll(),
-                authz.policy()
-        );
+                ctx, Set.of(authz.roles()), Set.of(authz.permissions()),
+                authz.requireAll(), authz.policy());
         Optional<ProtocolProvider> provider = runtime.provider(ctx.protocol());
         if (provider.isPresent()) {
-            if (!provider.get().authorize(ac)) {
+            if (!provider.get().authorize(ac))
                 throw new SecurityException("Authorization denied by provider");
-            }
         } else {
             checkRolesAndPermissions(ctx, authz.roles(), authz.permissions(), authz.requireAll());
         }
@@ -191,35 +173,21 @@ public class A2Interceptor {
         SecurityContext ctx = runtime.currentContext();
         String principalId = ctx.principal().map(Principal::getId).orElse(null);
         if (principalId == null) return;
-
-        TokenRequest req = TokenRequest.builder()
-                .type(ann.type())
-                .principalId(principalId)
-                .ttlSeconds(ann.ttlSeconds())
-                .scopes(ann.scopes())
-                .protocol(ctx.protocol())
-                .build();
-        runtime.tokenService().issue(req);
+        runtime.tokenService().issue(TokenRequest.builder()
+                .type(ann.type()).principalId(principalId).ttlSeconds(ann.ttlSeconds())
+                .scopes(ann.scopes()).protocol(ctx.protocol()).build());
     }
 
     private void handleServiceCredential(A2ServiceCredential ann) {
         SecurityContext ctx = runtime.currentContext();
         String principalId = ctx.principal().map(Principal::getId).orElse(null);
         if (principalId == null) return;
-
         long ttl = Math.min(ann.ttlSeconds() > 0 ? ann.ttlSeconds() : 3600, 3600);
-        TokenRequest req = TokenRequest.builder()
-                .type(TokenType.ACCESS)
-                .principalId(principalId)
-                .ttlSeconds(ttl)
+        runtime.tokenService().issue(TokenRequest.builder()
+                .type(TokenType.ACCESS).principalId(principalId).ttlSeconds(ttl)
                 .scopes(ann.scopes())
-                .claims(Map.of(
-                        "token_use", "service_credential",
-                        "aud", ann.audience()
-                ))
-                .protocol(ctx.protocol())
-                .build();
-        runtime.tokenService().issue(req);
+                .claims(Map.of("token_use", "service_credential", "aud", ann.audience()))
+                .protocol(ctx.protocol()).build());
     }
 
     private void handleRotate(A2Rotate ann) {
@@ -227,15 +195,10 @@ public class A2Interceptor {
         String principalId = ctx.principal().map(Principal::getId).orElse(null);
         String existing = ctx.tokenId().orElse(null);
         if (principalId == null) return;
-
         for (TokenType type : ann.types()) {
-            TokenRequest req = TokenRequest.builder()
-                    .type(type)
-                    .principalId(principalId)
-                    .existingToken(existing)
-                    .protocol(ctx.protocol())
-                    .build();
-            runtime.tokenService().rotate(req);
+            runtime.tokenService().rotate(TokenRequest.builder()
+                    .type(type).principalId(principalId).existingToken(existing)
+                    .protocol(ctx.protocol()).build());
         }
     }
 
@@ -243,22 +206,18 @@ public class A2Interceptor {
         SecurityContext ctx = runtime.currentContext();
         String principalId = ctx.principal().map(Principal::getId).orElse(null);
         String tokenId = ctx.tokenId().orElse(null);
-
-        if (ann.allForPrincipal() && principalId != null) {
+        if (ann.allForPrincipal() && principalId != null)
             runtime.tokenService().revokeAllForPrincipal(principalId);
-        } else if (tokenId != null) {
+        else if (tokenId != null)
             runtime.tokenService().revoke(tokenId);
-        }
     }
 
     private String resolveParam(Method method, Object[] args, String name) {
         Parameter[] params = method.getParameters();
         for (int i = 0; i < params.length; i++) {
-            if (params[i].getName().equals(name) && args[i] != null) {
+            if (params[i].getName().equals(name) && args[i] != null)
                 return String.valueOf(args[i]);
-            }
         }
-        // fallback: first String argument
         for (Object a : args) {
             if (a instanceof String) return (String) a;
         }
