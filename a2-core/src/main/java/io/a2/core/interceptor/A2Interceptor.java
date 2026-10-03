@@ -141,18 +141,28 @@ public class A2Interceptor {
     private void checkRolesAndPermissions(SecurityContext ctx, String[] roles,
                                           String[] permissions, boolean requireAll) {
         if (roles.length == 0 && permissions.length == 0) return;
+
         Set<String> requiredRoles = new HashSet<>(Arrays.asList(roles));
         Set<String> requiredPerms = new HashSet<>(Arrays.asList(permissions));
+
         if (requireAll) {
-            if (!ctx.roles().containsAll(requiredRoles))
+            if (!requiredRoles.isEmpty() && !ctx.roles().containsAll(requiredRoles)) {
                 throw new SecurityException("Missing required roles");
-            if (!ctx.permissions().containsAll(requiredPerms))
+            }
+            if (!requiredPerms.isEmpty() && !ctx.permissions().containsAll(requiredPerms)) {
                 throw new SecurityException("Missing required permissions");
+            }
         } else {
-            boolean roleOk = requiredRoles.isEmpty() || requiredRoles.stream().anyMatch(ctx::hasRole);
-            boolean permOk = requiredPerms.isEmpty() || requiredPerms.stream().anyMatch(ctx::hasPermission);
-            if (!roleOk && !permOk)
+            // Non-empty role list: at least one required role must match.
+            // Non-empty permission list: at least one required permission must match.
+            // Both lists non-empty → both categories must pass (AND across categories, OR within).
+            boolean roleOk = requiredRoles.isEmpty()
+                    || requiredRoles.stream().anyMatch(ctx::hasRole);
+            boolean permOk = requiredPerms.isEmpty()
+                    || requiredPerms.stream().anyMatch(ctx::hasPermission);
+            if (!roleOk || !permOk) {
                 throw new SecurityException("Insufficient privileges");
+            }
         }
     }
 
