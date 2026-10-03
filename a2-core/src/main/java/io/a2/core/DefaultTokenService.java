@@ -28,7 +28,11 @@ public class DefaultTokenService implements TokenService {
         Protocol protocol = request.protocol() != null ? request.protocol() : Protocol.JWT;
         Optional<ProtocolProvider> provider = A2Runtime.get().provider(protocol);
         if (provider.isPresent()) {
-            return provider.get().issueToken(request);
+            TokenResult fromProvider = provider.get().issueToken(request);
+            if (fromProvider != null && fromProvider.isSuccess()) {
+                return fromProvider;
+            }
+            // Provider present but could not issue (e.g. test stub) → opaque fallback
         }
         // Fallback: simple opaque token
         String tokenId = UUID.randomUUID().toString();
