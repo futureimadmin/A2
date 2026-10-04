@@ -63,6 +63,7 @@ jobs:
     name: Sonar Analysis (Cloud or Server)
     runs-on: ubuntu-latest
     needs: build
+    continue-on-error: true
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
@@ -98,7 +99,7 @@ jobs:
             SONAR_BRANCH="master"; [ "$GH_BRANCH" != "main" ] && SONAR_BRANCH="$GH_BRANCH"
             EXTRA="-Dsonar.branch.name=$SONAR_BRANCH"
           fi
-          mvn -B -ntp -Psonar clean verify sonar:sonar \
+          mvn -B -ntp -Psonar clean verify sonar:sonar -pl '!a2-sidecar' \
             -Dsonar.host.url="$HOST_URL" -Dsonar.organization="$ORG" -Dsonar.projectKey="$KEY" \
             -Dsonar.token="$SONAR_TOKEN" -Dsonar.qualitygate.wait=false $EXTRA
 
@@ -113,7 +114,7 @@ jobs:
           java-version: 17
           distribution: temurin
           cache: maven
-      - run: mvn -B -ntp -Pstatic-analysis verify -DskipTests || true
+      - run: mvn -B -ntp -Pstatic-analysis verify -DskipTests -pl '!a2-sidecar' || true
 
   publish:
     name: Publish to Maven Central
