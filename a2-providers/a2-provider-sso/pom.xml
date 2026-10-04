@@ -8,10 +8,9 @@
         <artifactId>a2-providers</artifactId>
         <version>1.0.0</version>
     </parent>
-
     <artifactId>a2-provider-sso</artifactId>
-    <name>A2 SSO Provider</name>
-
+    <name>A2 SSO Providers (Google, Entra, Okta, Ping, AD, Auth0)</name>
+    <description>Brand-specific SSO on top of OIDC discovery, Kerberos and SAML</description>
     <dependencies>
         <dependency>
             <groupId>com.futureim.a2</groupId>
@@ -19,12 +18,22 @@
         </dependency>
         <dependency>
             <groupId>com.futureim.a2</groupId>
+            <artifactId>a2-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.futureim.a2</groupId>
             <artifactId>a2-annotations</artifactId>
+            <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>com.futureim.a2</groupId>
             <artifactId>a2-provider-oidc</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
+            <version>9.40</version>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>

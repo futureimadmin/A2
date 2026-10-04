@@ -10,7 +10,7 @@
     </parent>
 
     <artifactId>a2-provider-oidc</artifactId>
-    <name>A2 OIDC Provider</name>
+    <name>A2 OIDC / OAuth2 Provider</name>
 
     <dependencies>
         <dependency>
@@ -19,11 +19,12 @@
         </dependency>
         <dependency>
             <groupId>com.futureim.a2</groupId>
-            <artifactId>a2-annotations</artifactId>
+            <artifactId>a2-core</artifactId>
         </dependency>
         <dependency>
             <groupId>com.nimbusds</groupId>
             <artifactId>nimbus-jose-jwt</artifactId>
+            <version>9.40</version>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>

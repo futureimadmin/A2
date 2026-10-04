@@ -10,7 +10,7 @@
     </parent>
 
     <artifactId>a2-provider-kerberos</artifactId>
-    <name>A2 Kerberos Provider</name>
+    <name>A2 Kerberos / SPNEGO Provider</name>
 
     <dependencies>
         <dependency>
@@ -19,7 +19,7 @@
         </dependency>
         <dependency>
             <groupId>com.futureim.a2</groupId>
-            <artifactId>a2-annotations</artifactId>
+            <artifactId>a2-core</artifactId>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>

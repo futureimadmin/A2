@@ -19,7 +19,7 @@
         </dependency>
         <dependency>
             <groupId>com.futureim.a2</groupId>
-            <artifactId>a2-annotations</artifactId>
+            <artifactId>a2-core</artifactId>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
