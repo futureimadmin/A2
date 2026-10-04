@@ -1,25 +1,40 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-    <parent><groupId>io.a2</groupId><artifactId>a2-parent</artifactId><version>1.0.0</version></parent>
+    <parent>
+        <groupId>com.futureim.a2</groupId>
+        <artifactId>a2-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
     <artifactId>a2-spring-boot-starter</artifactId>
     <name>A2 Spring Boot Starter</name>
+
     <dependencies>
-        <dependency><groupId>io.a2</groupId><artifactId>a2-core</artifactId></dependency>
-        <dependency><groupId>io.a2</groupId><artifactId>a2-provider-jwt</artifactId><version>${project.version}</version></dependency>
-        <dependency><groupId>io.a2</groupId><artifactId>a2-provider-apikey</artifactId><version>${project.version}</version></dependency>
-        <dependency><groupId>io.a2</groupId><artifactId>a2-provider-oidc</artifactId><version>${project.version}</version></dependency>
-        <dependency><groupId>io.a2</groupId><artifactId>a2-provider-saml</artifactId><version>${project.version}</version></dependency>
-        <dependency><groupId>io.a2</groupId><artifactId>a2-provider-kerberos</artifactId><version>${project.version}</version></dependency>
-        <dependency><groupId>io.a2</groupId><artifactId>a2-provider-sso</artifactId><version>${project.version}</version></dependency>
-        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-autoconfigure</artifactId></dependency>
-        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-aop</artifactId></dependency>
-        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId>
+        <dependency>
+            <groupId>com.futureim.a2</groupId>
+            <artifactId>a2-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
             <optional>true</optional>
         </dependency>
-        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-configuration-processor</artifactId><optional>true</optional></dependency>
-        <dependency><groupId>jakarta.servlet</groupId><artifactId>jakarta.servlet-api</artifactId><scope>provided</scope></dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-configuration-processor</artifactId>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
