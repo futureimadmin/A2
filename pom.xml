@@ -42,11 +42,6 @@
         <url>https://github.com/futureimadmin/A2/issues</url>
     </issueManagement>
 
-    <!-- Resolve sonar:sonar prefix without full GAV -->
-    <pluginGroups>
-        <pluginGroup>org.sonarsource.scanner.maven</pluginGroup>
-    </pluginGroups>
-
     <modules>
         <module>a2-annotations</module>
         <module>a2-spi</module>
