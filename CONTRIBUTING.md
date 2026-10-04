@@ -1,30 +1,22 @@
 # Contributing to A2
 
-Thank you for your interest in contributing!
+## Build
 
-## Getting Started
+```bash
+mvn -B clean verify -pl '!a2-sidecar'
+```
 
-1. Fork the repository.
-2. Clone your fork.
-3. Create a feature branch: `git checkout -b feature/my-feature`.
-4. Build: `mvn clean install`.
-5. Make your changes + add tests.
-6. Push and open a Pull Request.
+Requires JDK 17+.
 
-## Code Style
+## Modules
 
-- Java 17+.
-- Prefer immutable data objects.
-- Keep the annotation module dependency-free.
-- Document public SPI methods.
+- `a2-annotations` — declarative API
+- `a2-spi` — provider SPI
+- `a2-core` — runtime
+- `a2-providers/*` — protocol implementations
+- `a2-spring-boot-starter` / `a2-quarkus-extension`
+- `a2-sidecar` — gRPC multi-language access
 
-## Adding a New Protocol Provider
+## Coordinates
 
-1. Implement `io.a2.spi.ProtocolProvider`.
-2. Register it with `A2Runtime.get().register(provider)`.
-3. Add an example under `a2-examples`.
-4. Update the README and `docs/ANNOTATION_CONTRACT.md` if needed.
-
-## License
-
-By contributing you agree that your contributions will be licensed under the Apache License 2.0.
+`groupId`: `com.futureim.a2`
