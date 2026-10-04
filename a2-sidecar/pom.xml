@@ -77,7 +77,8 @@
                         <goals><goal>run</goal></goals>
                         <configuration>
                             <target>
-                                <chmod dir="${project.build.directory}/protoc-plugins" perm="ugo+x" includes="**/*" type="file"/>
+                                <mkdir dir="${project.build.directory}/protoc-plugins"/>
+                                <chmod dir="${project.build.directory}/protoc-plugins" perm="ugo+x" includes="**/*" type="file" failonerror="false"/>
                             </target>
                         </configuration>
                     </execution>
