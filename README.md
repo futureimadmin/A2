@@ -11,7 +11,7 @@
 public class OrderService { ... }
 ```
 
-**Version:** `1.0.0` · **Java:** 17+ · **Integrations:** Spring Boot 3, Quarkus 3, gRPC sidecar (Python, Go, Node, …)
+**Version:** `1.0.0` · **Java:** 17+ · **groupId:** `com.futureim.a2` · **Integrations:** Spring Boot 3, Quarkus 3, gRPC sidecar (Python, Go, **Node / TypeScript / React**, …)
 
 ---
 
@@ -28,11 +28,12 @@ public class OrderService { ... }
 9. [Spring Boot](#spring-boot)
 10. [Quarkus](#quarkus)
 11. [**Using A2 from Python and other languages**](#using-a2-from-python-and-other-languages)
-12. [gRPC sidecar reference](#grpc-sidecar-reference)
-13. [Testing notes](#testing-notes)
-14. [Quality — SonarLint & SonarQube](#quality--sonarlint--sonarqube)
-15. [Build](#build)
-16. [License](#license)
+12. [**Node / TypeScript / React + sidecar how-to**](#node--typescript--react--sidecar-how-to)
+13. [gRPC sidecar reference](#grpc-sidecar-reference)
+14. [Testing notes](#testing-notes)
+15. [Quality — SonarLint & SonarQube](#quality--sonarlint--sonarqube)
+16. [Build](#build)
+17. [License](#license)
 
 ---
 
@@ -45,23 +46,23 @@ public class OrderService { ... }
 | **Core** (`a2-core`) | `A2Runtime`, `RequestAuthenticator`, interceptor, instant credentials |
 | **Providers** | JWT, OIDC, SAML, API Key, Kerberos, SSO (Okta/Entra/Google/…) |
 | **Spring / Quarkus** | HTTP filters, AOP/CDI interceptors, CORS, 401/403 mapping |
-| **Sidecar** (`a2-sidecar`) | Same engine over **gRPC** for Python, Go, Node, Rust, … |
+| **Sidecar** (`a2-sidecar`) | Same engine over **gRPC** for Python, Go, Node, TypeScript, React backends, Rust, … |
 
-**Important for non-JVM apps:** Java annotations are a *policy language on the JVM*. Python (and other runtimes) do **not** embed `@A2Protected`. They either:
+**Important for non-JVM apps:** Java annotations are a *policy language on the JVM*. Node / TypeScript / React / Python do **not** embed `@A2Protected` in source. They either:
 
 1. **Call the A2 sidecar** (gRPC) — `Authenticate` / `Authorize` / `IssueToken` / … map 1:1 to the same engine, or  
 2. **Call a Java/Spring/Quarkus service** that is already annotated — send `Authorization` / `X-API-Key` / merchant headers; A2 enforces policy on the server.
 
 ```
-┌─────────────┐     gRPC      ┌──────────────┐     SPI      ┌────────────┐
-│ Python / Go │ ────────────► │  a2-sidecar  │ ───────────► │ Providers  │
-│ Node / …    │               │  A2Service   │              │ JWT OIDC…  │
-└─────────────┘               └──────────────┘              └────────────┘
+┌──────────────────┐   gRPC    ┌──────────────┐    SPI     ┌────────────┐
+│ Node / TS / React│ ────────► │  a2-sidecar  │ ─────────► │ Providers  │
+│ Python / Go / …  │           │  A2Service   │            │ JWT OIDC…  │
+└──────────────────┘           └──────────────┘            └────────────┘
                                       │
-┌─────────────┐   annotations  ┌──────▼───────┐
-│ Spring app  │ ─────────────► │  A2Runtime   │
-│ Quarkus app │                │  Interceptor │
-└─────────────┘                └──────────────┘
+┌──────────────────┐ annotations ┌────▼────────┐
+│ Spring / Quarkus │ ──────────► │  A2Runtime  │
+│ Java app         │             │  Interceptor│
+└──────────────────┘             └─────────────┘
 ```
 
 ---
@@ -70,12 +71,12 @@ public class OrderService { ... }
 
 ```xml
 <dependency>
-  <groupId>io.a2</groupId>
+  <groupId>com.futureim.a2</groupId>
   <artifactId>a2-core</artifactId>
   <version>1.0.0</version>
 </dependency>
 <dependency>
-  <groupId>io.a2</groupId>
+  <groupId>com.futureim.a2</groupId>
   <artifactId>a2-provider-jwt</artifactId>
   <version>1.0.0</version>
 </dependency>
@@ -285,7 +286,7 @@ provider.revokeToken(RevokeRequest.builder().tokenId(jti).build());
 
 ```xml
 <dependency>
-  <groupId>io.a2</groupId>
+  <groupId>com.futureim.a2</groupId>
   <artifactId>a2-spring-boot-starter</artifactId>
   <version>1.0.0</version>
 </dependency>
@@ -311,7 +312,7 @@ a2:
 
 ```xml
 <dependency>
-  <groupId>io.a2</groupId>
+  <groupId>com.futureim.a2</groupId>
   <artifactId>a2-quarkus-extension</artifactId>
   <version>1.0.0</version>
 </dependency>
@@ -325,134 +326,44 @@ CDI interceptor + JAX-RS exception mapper; native-image reflect config under `ME
 
 ### Mental model
 
-| On JVM | Outside JVM (Python, Go, Node, …) |
-|--------|-----------------------------------|
+| On JVM | Outside JVM (Python, Go, Node, TypeScript, React, …) |
+|--------|------------------------------------------------------|
 | Put **annotations** on methods/classes | **No annotations** in source |
 | Interceptor enforces policy in-process | Call **gRPC sidecar** *or* send credentials to an annotated Java API |
 
 Annotations express *intent* (“this operation needs OIDC + role `admin`”). The **sidecar exposes the same operations** as RPCs so any language can enforce equivalent rules.
 
-### Pattern A — Python calls the A2 sidecar (recommended for polyglot)
+### Pattern A — Call the A2 sidecar (recommended for polyglot)
 
-1. Run the sidecar next to your service (or as a shared cluster service):
+1. Run the sidecar:
 
 ```bash
 java -jar a2-sidecar/target/a2-sidecar-1.0.0.jar --port 50051
 ```
 
-2. Generate stubs from [`a2-sidecar/src/main/proto/a2.proto`](a2-sidecar/src/main/proto/a2.proto):
+2. Generate stubs from [`a2-sidecar/src/main/proto/a2.proto`](a2-sidecar/src/main/proto/a2.proto) (see language sections below).
 
-```bash
-python -m grpc_tools.protoc -I a2-sidecar/src/main/proto \
-  --python_out=. --grpc_python_out=. a2.proto
-```
+3. Call `Authenticate` → `Authorize` → optional `IssueToken` / `RevokeToken` / `Introspect`.
 
-3. **Authenticate** (mirror of what `@A2Protected` triggers on the server):
+### Pattern B — Client of an annotated Java API
 
-```python
-import grpc
-import a2_pb2, a2_pb2_grpc
-
-channel = grpc.insecure_channel("localhost:50051")
-stub = a2_pb2_grpc.A2ServiceStub(channel)
-
-# Same as sending Authorization: Bearer <jwt> to a Java app
-resp = stub.Authenticate(a2_pb2.AuthRequest(
-    protocol="JWT",
-    credentials=access_token,
-    headers={"authorization": f"Bearer {access_token}"},
-))
-if not resp.success:
-    raise PermissionError(resp.error)
-
-principal_id = resp.principal_id
-roles = list(resp.roles)
-```
-
-4. **Authorize** (mirror of `@A2Authorize` / roles on `@A2Protected`):
-
-```python
-authz = stub.Authorize(a2_pb2.AuthorizeRequest(
-    principal_id=principal_id,
-    required_roles=["admin"],
-    required_permissions=["order:write"],
-    require_all=False,
-    protocol="JWT",
-))
-if not authz.allowed:
-    raise PermissionError(authz.reason)
-```
-
-5. **Issue / rotate / revoke / introspect** tokens (mirror of `@A2Token`, `@A2Rotate`, `@A2Revoke`, instant credentials):
-
-```python
-issued = stub.IssueToken(a2_pb2.TokenRequest(
-    type="TEMPORARY",
-    principal_id=principal_id,
-    scopes=["payment:charge"],
-    ttl_seconds=3600,
-    protocol="JWT",
-    claims={"aud": "payment-service", "token_use": "instant_service"},
-))
-token = issued.token
-
-stub.RevokeToken(a2_pb2.RevokeRequest(token_id=issued.token_id, reason="logout"))
-```
-
-Decorator-style sugar in Python (optional wrapper around the same RPCs):
-
-```python
-def a2_protected(roles=None, protocol="JWT"):
-    roles = roles or []
-    def deco(fn):
-        def wrapper(token, *args, **kwargs):
-            auth = stub.Authenticate(a2_pb2.AuthRequest(
-                protocol=protocol, credentials=token))
-            if not auth.success:
-                raise PermissionError(auth.error)
-            if roles and not set(roles).intersection(auth.roles):
-                raise PermissionError("missing role")
-            return fn(token, *args, **kwargs)
-        return wrapper
-    return deco
-
-@a2_protected(roles=["admin"])
-def delete_user(token, user_id: str):
-    ...
-```
-
-That decorator is **your** Python equivalent of `@A2Protected` — policy still lives in A2; Python only calls the engine.
-
-### Pattern B — Python is a client of an annotated Java API
-
-Keep policy on the JVM; Python only attaches headers:
+Keep policy on the JVM; your app only attaches headers:
 
 ```python
 import requests
 
-# Java service has @A2Protected(protocols = API_KEY, roles = {"merchant"})
 r = requests.post(
     "https://api.example.com/merchants/onboard",
     headers={
         "X-API-Key": api_key,
-        "X-Merchant-Id": "merchant-42",  # multi-tenant named provider
+        "X-Merchant-Id": "merchant-42",
     },
     json={"name": "Acme"},
 )
-r.raise_for_status()  # 401 / 403 from A2 exception mapping
+r.raise_for_status()  # 401 / 403 from A2
 ```
 
-### Pattern C — Go / Node (same proto)
-
-```bash
-# Go
-protoc --go_out=. --go-grpc_out=. a2.proto
-
-# Node
-npx grpc_tools_node_protoc --js_out=import_style=commonjs,binary:. --grpc_out=. a2.proto
-```
-
-Call `Authenticate`, `Authorize`, `IssueToken` the same way as Python. Full sidecar notes: [docs/SIDECAR.md](docs/SIDECAR.md).
+Same idea works from `fetch` in the browser or Node `axios` / `undici`.
 
 ### Mapping annotations → gRPC (cheat sheet)
 
@@ -464,7 +375,253 @@ Call `Authenticate`, `Authorize`, `IssueToken` the same way as Python. Full side
 | `@A2Rotate` | `RotateToken` |
 | `@A2Revoke` | `RevokeToken` |
 | Introspection | `Introspect` |
-| `@A2InstantCredentials` | `IssueToken` with type `TEMPORARY` / claims (`a2.instant.*`, `assumed_role`, …) |
+| `@A2InstantCredentials` | `IssueToken` with type `TEMPORARY` / claims (`aud`, `token_use`, …) |
+
+---
+
+## Node / TypeScript / React + sidecar how-to
+
+**Yes.** Node.js, TypeScript, and React applications can use A2 in two ways:
+
+| Approach | Best for | How |
+|----------|----------|-----|
+| **A. gRPC sidecar** | Node/TS **backends**, BFF, NestJS, Next.js API routes, workers | Talk to `A2Service` on port `50051` |
+| **B. HTTP client** | **React browser** apps, any SPA | Call your Spring/Quarkus API; A2 enforces policy server-side. Do **not** expose the sidecar to the public internet without auth/mTLS. |
+
+Browsers generally should **not** open a raw gRPC channel to the sidecar (CORS, secrets, network topology). Prefer: React → your BFF (Node or Java) → sidecar or annotated Java services.
+
+### 1. Start the sidecar
+
+```bash
+# After building a2-sidecar (requires protoc)
+mvn -pl a2-sidecar -am package -DskipTests
+java -jar a2-sidecar/target/a2-sidecar-1.0.0.jar --port 50051
+```
+
+Health check with [grpcurl](https://github.com/fullstorydev/grpcurl):
+
+```bash
+grpcurl -plaintext localhost:50051 list
+grpcurl -plaintext -d '{"protocol":"JWT","credentials":"<token>"}' \
+  localhost:50051 a2.A2Service/Authenticate
+```
+
+### 2. Generate Node / TypeScript stubs from `a2.proto`
+
+Proto path: [`a2-sidecar/src/main/proto/a2.proto`](a2-sidecar/src/main/proto/a2.proto)
+
+**Option A — classic `@grpc/grpc-js` + `grpc-tools`**
+
+```bash
+npm install @grpc/grpc-js @grpc/proto-loader
+# optional codegen:
+npm install -D grpc-tools
+npx grpc_tools_node_protoc \
+  --js_out=import_style=commonjs,binary:./generated \
+  --grpc_out=grpc_js:./generated \
+  -I a2-sidecar/src/main/proto \
+  a2-sidecar/src/main/proto/a2.proto
+```
+
+**Option B — load proto at runtime (simple for Node/TS)**
+
+```typescript
+// a2Client.ts
+import * as grpc from "@grpc/grpc-js";
+import * as protoLoader from "@grpc/proto-loader";
+import path from "path";
+
+const PROTO = path.join(__dirname, "../a2-sidecar/src/main/proto/a2.proto");
+
+const packageDefinition = protoLoader.loadSync(PROTO, {
+  keepCase: true,
+  longs: String,
+  enums: String,
+  defaults: true,
+  oneofs: true,
+});
+
+const proto = grpc.loadPackageDefinition(packageDefinition) as any;
+const A2Service = proto.a2.A2Service;
+
+export function createA2Client(address = "localhost:50051") {
+  return new A2Service(address, grpc.credentials.createInsecure());
+}
+```
+
+For production, use TLS: `grpc.credentials.createSsl(...)` and never expose an insecure sidecar publicly.
+
+### 3. Authenticate & authorize from TypeScript (Node / Nest / Next API route)
+
+```typescript
+import { createA2Client } from "./a2Client";
+
+const client = createA2Client(process.env.A2_SIDECAR ?? "localhost:50051");
+
+function authenticateJwt(token: string): Promise<{
+  principalId: string;
+  roles: string[];
+  permissions: string[];
+}> {
+  return new Promise((resolve, reject) => {
+    client.Authenticate(
+      {
+        protocol: "JWT",
+        credentials: token,
+        headers: { authorization: `Bearer ${token}` },
+      },
+      (err: Error | null, resp: any) => {
+        if (err) return reject(err);
+        if (!resp.success) return reject(new Error(resp.error || "auth failed"));
+        resolve({
+          principalId: resp.principal_id,
+          roles: resp.roles || [],
+          permissions: resp.permissions || [],
+        });
+      }
+    );
+  });
+}
+
+function authorize(
+  principalId: string,
+  requiredRoles: string[],
+  requiredPermissions: string[] = []
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    client.Authorize(
+      {
+        principal_id: principalId,
+        required_roles: requiredRoles,
+        required_permissions: requiredPermissions,
+        require_all: false,
+        protocol: "JWT",
+      },
+      (err: Error | null, resp: any) => {
+        if (err) return reject(err);
+        if (!resp.allowed) return reject(new Error(resp.reason || "forbidden"));
+        resolve();
+      }
+    );
+  });
+}
+
+// Express / Nest middleware style
+export async function requireAdmin(req: any, res: any, next: any) {
+  try {
+    const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+    const auth = await authenticateJwt(token);
+    await authorize(auth.principalId, ["admin"]);
+    req.a2 = auth;
+    next();
+  } catch (e: any) {
+    res.status(401).json({ error: e.message });
+  }
+}
+```
+
+### 4. Issue / revoke tokens from Node (mirror of `@A2Token` / `@A2Revoke`)
+
+```typescript
+function issueTempToken(principalId: string, audience: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    client.IssueToken(
+      {
+        type: "TEMPORARY",
+        principal_id: principalId,
+        scopes: ["payment:charge"],
+        ttl_seconds: 3600,
+        protocol: "JWT",
+        claims: { aud: audience, token_use: "instant_service" },
+      },
+      (err: Error | null, resp: any) => {
+        if (err || !resp.success) return reject(err || new Error(resp.error));
+        resolve(resp.token);
+      }
+    );
+  });
+}
+```
+
+### 5. React (browser) — recommended pattern
+
+React runs in the browser. Treat A2 like any other backend security layer:
+
+1. User signs in via your IdP (OIDC) or your API issues a session/JWT.
+2. React stores the token (httpOnly cookie preferred, or memory + refresh).
+3. Every API call sends `Authorization: Bearer …` (or `X-API-Key`) to **your** backend.
+4. Backend is either:
+   - **Java** with `@A2Protected` / `@A2Authorize`, or  
+   - **Node BFF** that calls the **sidecar** before serving data.
+
+```tsx
+// React — call your API, not the sidecar directly
+async function loadOrders(accessToken: string) {
+  const res = await fetch("https://api.example.com/orders", {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "X-Merchant-Id": "merchant-42", // multi-tenant optional
+    },
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error("A2 denied this request");
+  }
+  return res.json();
+}
+```
+
+Optional: a thin Next.js **Route Handler** that uses the sidecar so the browser never sees gRPC:
+
+```typescript
+// app/api/whoami/route.ts (Next.js)
+import { createA2Client } from "@/lib/a2Client";
+
+export async function GET(request: Request) {
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
+  const client = createA2Client(process.env.A2_SIDECAR!);
+
+  const auth = await new Promise<any>((resolve, reject) => {
+    client.Authenticate(
+      { protocol: "JWT", credentials: token },
+      (err: Error | null, resp: any) => (err ? reject(err) : resolve(resp))
+    );
+  });
+
+  if (!auth.success) {
+    return Response.json({ error: auth.error }, { status: 401 });
+  }
+  return Response.json({
+    id: auth.principal_id,
+    roles: auth.roles,
+  });
+}
+```
+
+### 6. Docker-style layout
+
+```yaml
+# docker-compose excerpt
+services:
+  a2-sidecar:
+    image: your-registry/a2-sidecar:1.0.0
+    ports: ["50051:50051"]
+    # configure providers via env / mounted config as you extend the server
+
+  node-bff:
+    build: ./bff
+    environment:
+      A2_SIDECAR: a2-sidecar:50051
+    depends_on: [a2-sidecar]
+```
+
+### Python quick reminder
+
+```bash
+python -m grpc_tools.protoc -I a2-sidecar/src/main/proto \
+  --python_out=. --grpc_python_out=. a2.proto
+```
+
+Same RPCs as TypeScript (`Authenticate`, `Authorize`, `IssueToken`, …).
 
 ---
 
@@ -483,6 +640,8 @@ java -jar a2-sidecar/target/a2-sidecar-1.0.0.jar --port 50051
 | `RevokeToken` | Revoke one or all for principal |
 | `Introspect` | Active token metadata |
 
+**Messages** (see `a2.proto`): `AuthRequest` (`protocol`, `credentials`, `headers`), `AuthorizeRequest` (`principal_id`, `required_roles`, `required_permissions`, `require_all`), `TokenRequest` (`type`, `principal_id`, `scopes`, `ttl_seconds`, `claims`, `protocol`).
+
 ```bash
 grpcurl -plaintext -d '{
   "protocol": "JWT",
@@ -490,7 +649,13 @@ grpcurl -plaintext -d '{
 }' localhost:50051 a2.A2Service/Authenticate
 ```
 
-Deployment: sidecar-per-pod, central A2 service, or embedded JVM (Spring/Quarkus).
+Deployment options:
+
+| Mode | When |
+|------|------|
+| Sidecar per pod | Lowest latency; each workload has local A2 |
+| Shared A2 service | Central policy/providers; many languages call one endpoint |
+| Embedded JVM | Spring/Quarkus app with annotations — no separate process |
 
 ---
 
@@ -520,7 +685,7 @@ Without a Sonar token, CI still runs **SpotBugs + PMD** (`static-analysis` profi
 
 ```bash
 export SONAR_TOKEN=...
-mvn -Psonar clean verify sonar:sonar
+mvn -Psonar clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
 mvn -Pstatic-analysis verify -DskipTests
 ```
 
@@ -535,7 +700,7 @@ mvn -Prelease clean deploy             # Maven Central (manual)
 
 Modules: `a2-annotations`, `a2-spi`, `a2-core`, `a2-providers/*`, `a2-spring-boot-starter`, `a2-quarkus-extension`, `a2-sidecar`, `a2-examples`.
 
-See [docs/MAVEN_CENTRAL.md](docs/MAVEN_CENTRAL.md).
+Maven coordinates use **`com.futureim.a2`**. See [docs/MAVEN_CENTRAL.md](docs/MAVEN_CENTRAL.md).
 
 ---
 
