@@ -9,8 +9,8 @@
     <version>1.0.0</version>
     <packaging>pom</packaging>
 
-    <name>A2 — Annotation-driven IAM</name>
-    <description>Annotation-first Identity & Access Management framework</description>
+    <name>A2 - Annotation-driven IAM</name>
+    <description>Annotation-first Identity and Access Management framework</description>
     <url>https://github.com/futureimadmin/A2</url>
 
     <licenses>
